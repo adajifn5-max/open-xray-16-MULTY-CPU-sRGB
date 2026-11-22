@@ -1,8 +1,10 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 
 #include "SoundRender_Core.h"
 #include "SoundRender_Source.h"
-
+#include "SoundCatalog.h"
+#include "xrCore/SoundProfileLite.h" //profiler
 #include <vorbis/vorbisfile.h>
 
 CSoundRender_Source::~CSoundRender_Source() { unload(); }
@@ -154,104 +156,10 @@ void CSoundRender_Source::close(OggVorbis_File*& ovf) const
 
 bool CSoundRender_Source::LoadWave(pcstr pName)
 {
-    ZoneScoped;
-
+    XR_STUTTER_DISABLED_SCOPE(Sound, "CSoundRender_Source::LoadWave", pName);
     pname = pName;
-
-    // Load file into memory and parse WAV-format
-    OggVorbis_File ovf;
-    {
-        IReader* wave = FS.r_open(pname.c_str());
-        R_ASSERT3(wave && wave->length(), "Can't open wave file:", pname.c_str());
-        ov_open_callbacks(wave, &ovf, nullptr, 0, g_ov_callbacks);
-    }
-
-    const vorbis_info* ovi = ov_info(&ovf, -1);
-
-    // verify
-    R_ASSERT3_CURE(ovi, "Invalid source info:", pName,
-    {
-        ov_clear(&ovf);
-        return false;
-    });
-
-    m_data_info = {};
-
-    m_data_info.samplesPerSec = ovi->rate;
-    m_data_info.channels = u16(ovi->channels);
-
-    if (SoundRender->supports_float_pcm)
-    {
-        m_data_info.format = SoundFormat::Float32;
-        m_data_info.bitsPerSample = 32;
-    }
-    else
-    {
-        m_data_info.format = SoundFormat::PCM;
-        m_data_info.bitsPerSample = 16;
-    }
-
-    m_data_info.blockAlign = m_data_info.bitsPerSample / 8 * m_data_info.channels;
-    m_data_info.avgBytesPerSec = m_data_info.samplesPerSec * m_data_info.blockAlign;
-    m_data_info.bytesPerBuffer = sdef_target_block * m_data_info.avgBytesPerSec / 1000;
-
-    const s64 pcm_total = ov_pcm_total(&ovf, -1);
-    dwBytesTotal = u32(pcm_total * m_data_info.blockAlign);
-    fTimeTotal = dwBytesTotal / float(m_data_info.avgBytesPerSec);
-
-    m_info = {};
-
-    const vorbis_comment* ovm = ov_comment(&ovf, -1);
-    if (ovm->comments)
-    {
-        IReader F(ovm->user_comments[0], ovm->comment_lengths[0]);
-        const u32 vers = F.r_u32();
-        if (vers == 0x0001)
-        {
-            m_info.minDist = F.r_float();
-            m_info.maxDist = F.r_float();
-            m_info.baseVolume = 1.f;
-            m_info.gameType = F.r_u32();
-            m_info.maxAIDist = m_info.maxDist;
-        }
-        else if (vers == 0x0002)
-        {
-            m_info.minDist = F.r_float();
-            m_info.maxDist = F.r_float();
-            m_info.baseVolume = F.r_float();
-            m_info.gameType = F.r_u32();
-            m_info.maxAIDist = m_info.maxDist;
-        }
-        else if (vers == OGG_COMMENT_VERSION)
-        {
-            m_info.minDist = F.r_float();
-            m_info.maxDist = F.r_float();
-            m_info.baseVolume = F.r_float();
-            m_info.gameType = F.r_u32();
-            m_info.maxAIDist = F.r_float();
-        }
-        else
-        {
-#ifndef MASTER_GOLD
-            Log("! Invalid ogg-comment version, file: ", pName);
-#endif
-        }
-    }
-    else
-    {
-#ifndef MASTER_GOLD
-        Log("! Missing ogg-comment, file: ", pName);
-#endif
-    }
-
-    R_ASSERT3_CURE(m_info.maxAIDist >= 0.1f && m_info.maxDist >= 0.1f, "Invalid max distance.", pName,
-    {
-        ov_clear(&ovf);
-        return false;
-    });
-
-    ov_clear(&ovf);
-    return true;
+    return SoundCatalogLoadMetadata(pName, SoundRender->supports_float_pcm,
+        m_data_info, m_info, dwBytesTotal, fTimeTotal);
 }
 
 bool CSoundRender_Source::load(pcstr name)
@@ -267,27 +175,15 @@ bool CSoundRender_Source::load(pcstr name)
 
     fname = N;
 
-    strconcat(fn, N, ".ogg");
-    if (!FS.exist("$level$", fn))
-        FS.update_path(fn, "$game_sounds$", fn);
-
-#ifndef MASTER_GOLD
-    if (!FS.exist(fn))
+    xr_string resolved;
+    if (!SoundCatalogResolve(N, resolved))
     {
-        Msg("~ %s: Can't find sound '%s'", __FUNCTION__, name);
-#   ifdef _EDITOR
-        FS.update_path(fn, "$game_sounds$", "$no_sound.ogg");
-#   endif
-    }
+#ifdef _EDITOR
+        if (!SoundCatalogResolve("$no_sound", resolved))
 #endif
-
-    if (FS.exist(fn))
-    {
-        if (LoadWave(fn))
-            return true;
+            return false;
     }
-
-    return false;
+    return LoadWave(resolved.c_str());
 }
 
 void CSoundRender_Source::unload()

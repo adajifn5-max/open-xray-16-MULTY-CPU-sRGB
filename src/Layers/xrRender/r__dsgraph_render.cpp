@@ -33,7 +33,7 @@ bool cmp_pass(const T& left, const T& right)
 {
     if (left->first->equal(*right->first))
         return false;
-    return left->second.ssa >= right->second.ssa;
+    return left->second.ssa > right->second.ssa; //gpt code
 }
 
 void R_dsgraph_structure::render_graph(u32 _priority)
@@ -141,6 +141,7 @@ void R_dsgraph_structure::render_graph(u32 _priority)
 class hud_transform_helper
 {
     Fmatrix Pold;
+    bool hudProjectionOld;
     static u32 cullMode;
     static bool isActive;
 
@@ -152,6 +153,7 @@ public:
     {
         // Change projection
         Pold  = Device.mProject;
+        hudProjectionOld = cmd_list.xforms.is_hud_projection();
 
         // XXX: Xottab_DUTY: custom FOV. Implement it someday
         // It should be something like this:
@@ -173,6 +175,7 @@ public:
         prj_new.build_projection(deg2rad(psHUD_FOV * Device.fFOV /* *Device.fASPECT*/), Device.fASPECT,
             HUD_VIEWPORT_NEAR, g_pGamePersistent->Environment().CurrentEnv.far_plane);
         cmd_list.set_xform_project(prj_new);
+        cmd_list.xforms.set_hud_projection(true);
 
         RImplementation.rmNear(cmd_list);
 
@@ -187,6 +190,7 @@ public:
 
         // Restore projection
         cmd_list.set_xform_project(Pold);
+        cmd_list.xforms.set_hud_projection(hudProjectionOld);
         // restore culling mode
         cmd_list.set_CullMode(cullMode);
         isActive = false;

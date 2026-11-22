@@ -1,9 +1,11 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
 void CRender::render_lights(light_Package& LP)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CRender::render_lights");
     ZoneScoped;
 
     //////////////////////////////////////////////////////////////////////////
@@ -101,7 +103,11 @@ void CRender::render_lights(light_Package& LP)
         for (const auto& [L, task, batch_id] : lights_queue)
         {
             if (task)
+            {
+                XR_STUTTER_SCOPE(Wait, "renderer.wait.light", "shadow subspace",
+                    reinterpret_cast<std::uintptr_t>(task), reinterpret_cast<std::uintptr_t>(L));
                 TaskScheduler->Wait(*task);
+            }
 
             auto& dsgraph = get_context(batch_id);
 
@@ -184,6 +190,8 @@ void CRender::render_lights(light_Package& LP)
 
             const auto& calc_lights = [data]
             {
+                XR_STUTTER_SCOPE(Task, "renderer.task.light", "shadow subspace",
+                    reinterpret_cast<std::uintptr_t>(data.L), data.batch_id);
                 ZoneScopedN("calc lights");
                 auto& dsgraph = RImplementation.get_context(data.batch_id);
                 {

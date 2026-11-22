@@ -190,7 +190,8 @@ public:
     [[nodiscard]]
     bool IsFinished() const noexcept
     {
-        return GetJobsCount() == 0;
+        //return GetJobsCount() == 0;
+        return m_data.jobs.load(std::memory_order_acquire) == 0;
     }
 
 private:

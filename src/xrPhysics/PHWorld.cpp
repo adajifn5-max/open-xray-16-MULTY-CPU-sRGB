@@ -265,7 +265,8 @@ void CPHWorld::Step()
     PH_OBJECT_I i_object;
     PH_UPDATE_OBJECT_I i_update_object;
 
-    if (disable_count == 0)
+    const bool placementQuery = IsPlacementQueryActive();
+    if (!placementQuery && disable_count == 0)
     {
         disable_count = worldDisablingParams.objects_params.L2frames;
         for (i_object = m_recently_disabled_objects.begin(); m_recently_disabled_objects.end() != i_object;)
@@ -278,8 +279,11 @@ void CPHWorld::Step()
     if (!IsFreezed())
         --disable_count;
 
-    ++m_steps_num;
-    ++m_steps_short_num;
+    if (!placementQuery)
+    {
+        ++m_steps_num;
+        ++m_steps_short_num;
+    }
     stats.Collision.Begin();
 
     for (i_object = m_objects.begin(); m_objects.end() != i_object;)
@@ -338,7 +342,8 @@ void CPHWorld::Step()
     debug_output().dbg_islands_num() = 0;
 #endif
     //////////////////////////////////////////////////////////////////////
-    m_commander->update_threadsafety();
+    if (!placementQuery)
+        m_commander->update_threadsafety();
     //////////////////////////////////////////////////////////////////////
     for (i_object = m_objects.begin(); m_objects.end() != i_object;)
     {

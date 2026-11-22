@@ -161,8 +161,9 @@ MotionID CKinematicsAnimated::LL_MotionID(LPCSTR B)
     for (int k = int(m_Motions.size()) - 1; k >= 0; --k)
     {
         shared_motions* s_mots = &m_Motions[k].motions;
-        accel_map::iterator I = s_mots->motion_map()->find(pstr(B));
-        if (I != s_mots->motion_map()->end())
+        const accel_map& motions = *s_mots->motion_map();
+        const auto I = motions.find(B);
+        if (I != motions.end())
         {
             motion_ID.set(u16(k), I->second);
             break;
@@ -192,8 +193,9 @@ MotionID CKinematicsAnimated::ID_Cycle_Safe(LPCSTR N)
     for (int k = int(m_Motions.size()) - 1; k >= 0; --k)
     {
         shared_motions* s_mots = &m_Motions[k].motions;
-        accel_map::const_iterator I = s_mots->cycle()->find(pstr(N));
-        if (I != s_mots->cycle()->end())
+        const accel_map& cycles = *s_mots->cycle();
+        const auto I = cycles.find(N);
+        if (I != cycles.end())
         {
             motion_ID.set(u16(k), I->second);
             break;
@@ -436,8 +438,9 @@ MotionID CKinematicsAnimated::ID_FX_Safe(LPCSTR N)
     for (int k = int(m_Motions.size()) - 1; k >= 0; --k)
     {
         shared_motions* s_mots = &m_Motions[k].motions;
-        accel_map::iterator I = s_mots->fx()->find(pstr(N));
-        if (I != s_mots->fx()->end())
+        const accel_map& effects = *s_mots->fx();
+        const auto I = effects.find(N);
+        if (I != effects.end())
         {
             motion_ID.set(u16(k), I->second);
             break;

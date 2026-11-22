@@ -35,7 +35,8 @@ public:
         u16 flags = 0);
     void Destroy();
     bool Activate(
-        const Fvector need_size, u16 steps, float max_displacement, float max_rotation, bool un_freeze_later = false);
+        const Fvector need_size, u16 steps, float max_displacement, float max_rotation, bool un_freeze_later = false,
+        u16 max_attempts = 10);
     const Fvector& Position();
     void Size(Fvector& size);
     dBodyID ODEBody() { return m_body; }

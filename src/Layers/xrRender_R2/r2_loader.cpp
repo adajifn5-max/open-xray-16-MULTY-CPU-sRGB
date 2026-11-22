@@ -117,11 +117,12 @@ void CRender::level_Unload()
     if (!b_loaded)
         return;
 
+    //*** Details
+    // Its visibility task reads HOM; join it before unloading that dependency.
+    Details->Unload();
+
     // HOM
     HOM.Unload();
-
-    //*** Details
-    Details->Unload();
 
     //*** Sectors
     // 1.
@@ -258,17 +259,20 @@ void CRender::LoadBuffers(CStreamReader* base_fs, bool alternative)
         ibuffers.resize(count);
         for (u32 i = 0; i < count; i++)
         {
-            const u32 iCount = fs->r_u32();
+            const u32 taggedCount = fs->r_u32();
+            const u32 indexStride = (taggedCount & xrOGF_Index32) ? sizeof(u32) : sizeof(u16);
+            const u32 iCount = taggedCount & ~xrOGF_Index32;
+            R_ASSERT2(size_t(iCount) * indexStride <= size_t(fs->elapsed()), "Truncated level index buffer");
 #ifndef MASTER_GOLD
-            Msg("* [Loading IB] %d indices, %d Kb", iCount, (iCount * 2) / 1024);
+            Msg("* [Loading IB] %u indices, %zu Kb", iCount, (size_t(iCount) * indexStride) / 1024);
 #endif
 
             // Create and fill
             //  TODO: DX11: Check fragmentation.
             //  Check if buffer is less then 2048 kb
-            ibuffers[i].Create(iCount * 2);
+            ibuffers[i].Create(size_t(iCount) * indexStride, false, true, indexStride);
             u8* pData = static_cast<u8*>(ibuffers[i].Map());
-            fs->r(pData, iCount * 2);
+            fs->r(pData, size_t(iCount) * indexStride);
             ibuffers[i].Unmap(true); // upload index data
 
             //			fs().advance		(iCount*2);
@@ -464,14 +468,7 @@ void CRender::LoadSWIs(CStreamReader* base_fs)
         for (u32 c = 0; c < item_count; c++)
         {
             FSlideWindowItem& swi = SWIs[c];
-            swi.reserved[0] = fs->r_u32();
-            swi.reserved[1] = fs->r_u32();
-            swi.reserved[2] = fs->r_u32();
-            swi.reserved[3] = fs->r_u32();
-            swi.count = fs->r_u32();
-            VERIFY(nullptr == swi.sw);
-            swi.sw = xr_alloc<FSlideWindow>(swi.count);
-            fs->r(swi.sw, sizeof(FSlideWindow) * swi.count);
+            ReadSlideWindows(*fs, swi);
         }
         fs->close();
     }

@@ -80,8 +80,12 @@ void try_change_current_entity()
 
     OBJECTS::const_iterator I = ISpatialResult.begin();
     OBJECTS::const_iterator E = ISpatialResult.end();
+
     for (; I != E; ++I)
     {
+
+        
+
         CCustomMonster* current = smart_cast<CCustomMonster*>(*I);
         if (!current)
             continue;
@@ -815,8 +819,28 @@ void CAI_Stalker::debug_text()
         u32 object_count = 0;
         CSoundPlayer::SOUND_COLLECTIONS::const_iterator I = sound().objects().begin();
         CSoundPlayer::SOUND_COLLECTIONS::const_iterator E = sound().objects().end();
+        
         for (; I != E; ++I)
-            object_count += (*I).second.second->m_sounds.size();
+{
+    const auto& entry = (*I).second.second;
+
+    if (entry->ready())
+    {
+        object_count +=
+            static_cast<u32>(entry->collection->m_sounds.size());
+    }
+        
+        /*for (; I != E; ++I)
+            
+            const auto& entry = (*I).second.second;
+
+if (entry->ready())
+{
+    object_count +=
+        static_cast<u32>(entry->collection->m_sounds.size());*/
+}
+            
+            //object_count += (*I).second.second->m_sounds.size();
         DBG_OutText("%s%sobjects     : %d", indent, indent, object_count);
     }
     {

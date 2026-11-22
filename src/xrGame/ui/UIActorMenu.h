@@ -172,6 +172,29 @@ protected:
     // Drag&Drop lists
     CUIDragDropListEx* m_pLists[eListCount]{};
 
+    struct PendingInventoryCell
+{
+    PIItem item = nullptr;
+    CUIDragDropListEx* list = nullptr;
+    u16 slot = 0;
+    bool fromSlot = false;
+};
+
+xr_vector<PendingInventoryCell> m_pendingInventoryCells;
+
+size_t m_nextInventoryCell = 0;
+u32 m_lastInventoryBuildFrame = u32(-1);
+u32 m_inventoryBuildModifyFrame = 0;
+
+bool m_inventoryBuildActive = false;
+bool m_inventoryBuildDirty = false;
+
+void StartInventoryBuild(CUIDragDropListEx* bagList);
+void ProcessInventoryBuild();
+void CancelInventoryBuild();
+void EnableInventoryBuildInput(bool enabled);
+
+
 public:
     CUIDragDropReferenceList* m_pQuickSlot{};
 

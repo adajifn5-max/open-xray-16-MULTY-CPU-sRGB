@@ -581,23 +581,12 @@ void CMainMenu::OnFrame()
 void CMainMenu::OnDeviceCreate() {}
 void CMainMenu::Screenshot(IRender::ScreenshotMode mode, LPCSTR name)
 {
-    if (mode != IRender::SM_FOR_GAMESAVE)
-    {
-        GEnv.Render->Screenshot(mode, name);
-    }
-    else
-    {
-        m_Flags.set(flGameSaveScreenshot, TRUE);
-        xr_strcpy(m_screenshot_name, name);
-        if (g_pGameLevel && m_Flags.test(flActive))
-        {
-            Device.seqFrame.Add(g_pGameLevel);
-            Device.seqRender.Add(g_pGameLevel);
-        };
-        m_screenshotFrame = Device.dwFrame + 1;
-        m_Flags.set(flRestoreConsole, Console->bVisible);
-        Console->Hide();
-    }
+    // Save thumbnails require a delayed GPU readback and CPU image processing.
+    // Skip the request before changing UI state or scheduling another frame.
+    if (mode == IRender::SM_FOR_GAMESAVE)
+        return;
+
+    GEnv.Render->Screenshot(mode, name);
 }
 
 void CMainMenu::RegisterPPDraw(CUIWindow* w)

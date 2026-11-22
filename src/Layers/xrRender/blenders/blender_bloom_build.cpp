@@ -77,7 +77,7 @@ void CBlender_bloom_build::Compile(CBlender_Compile& C)
         C.r_Pass("stub_notransform_build", "bloom_build", FALSE, FALSE, FALSE, FALSE, D3DBLEND_SRCALPHA,
             D3DBLEND_INVSRCALPHA);
         // C.r_Sampler_clf		("s_image",			r2_RT_generic1);
-        C.r_dx11Texture("s_image", r2_RT_generic1);
+        C.r_dx11Texture("s_image", RImplementation.o.linear_rendering ? r2_RT_generic0 : r2_RT_generic1);
         C.r_dx11Sampler("smp_rtlinear");
         C.r_End();
         break;
@@ -157,7 +157,7 @@ void CBlender_bloom_build_msaa::Compile(CBlender_Compile& C)
         C.r_Pass("stub_notransform_build", "bloom_build", FALSE, FALSE, FALSE, FALSE, D3DBLEND_SRCALPHA,
             D3DBLEND_INVSRCALPHA);
         // C.r_Sampler_clf		("s_image",			r2_RT_generic1);
-        C.r_dx11Texture("s_image", r2_RT_generic1);
+        C.r_dx11Texture("s_image", RImplementation.o.linear_rendering ? r2_RT_generic0 : r2_RT_generic1);
         C.r_dx11Sampler("smp_rtlinear");
         C.r_End();
         break;
@@ -232,6 +232,7 @@ void CBlender_postprocess_msaa::Compile(CBlender_Compile& C)
         C.r_dx11Texture("s_base0", r2_RT_generic);
         C.r_dx11Texture("s_base1", r2_RT_generic);
         C.r_dx11Texture("s_noise", "fx" DELIMITER "fx_noise2");
+        C.r_dx11Texture("s_tonemap", r2_RT_luminance_cur);
 
         C.r_dx11Sampler("smp_rtlinear");
         C.r_dx11Sampler("smp_linear");
@@ -244,6 +245,7 @@ void CBlender_postprocess_msaa::Compile(CBlender_Compile& C)
         C.r_dx11Texture("s_base0", r2_RT_generic);
         C.r_dx11Texture("s_base1", r2_RT_generic);
         C.r_dx11Texture("s_noise", "fx" DELIMITER "fx_noise2");
+        C.r_dx11Texture("s_tonemap", r2_RT_luminance_cur);
         C.r_dx11Texture("s_grad0", "$user$cmap0");
         C.r_dx11Texture("s_grad1", "$user$cmap1");
 

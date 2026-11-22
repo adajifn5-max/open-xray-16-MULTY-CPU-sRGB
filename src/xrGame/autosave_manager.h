@@ -7,7 +7,17 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #pragma once
+#include "MainMenu.h"
+#include "xrEngine/device.h"
+#include <chrono>
 #include "xrEngine/ISheduled.h"
+
+
+
+
+
+
+
 
 class CAutosaveManager : public ScheduledBase
 {

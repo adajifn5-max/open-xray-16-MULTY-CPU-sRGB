@@ -5,14 +5,14 @@
 
 namespace xray::render::RENDER_NAMESPACE
 {
-const u32 vs_size = 3000;
+const u32 vs_size = 3000 * 4;
 
 void CDetailManager::soft_Load()
 {
     R_ASSERT(RImplementation.Vertex.Buffer());
-    R_ASSERT(RImplementation.Index.Buffer());
+    R_ASSERT(RImplementation.Index.Buffer32());
     // Vertex Stream
-    soft_Geom.create(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1, RImplementation.Vertex.Buffer(), RImplementation.Index.Buffer());
+    soft_Geom.create(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1, RImplementation.Vertex.Buffer(), RImplementation.Index.Buffer32(), sizeof(u32));
 }
 
 void CDetailManager::soft_Unload() { soft_Geom.destroy(); }
@@ -42,17 +42,15 @@ void CDetailManager::soft_Render(const Fsphere* bounds)
                 continue;
 
             SlotItemVec* items = _vI->items;
-            u32 vCount_Total = items->size() * vCount_Object;
-            // calculate lock count needed
-            u32 lock_count = vCount_Total / vs_size;
-            if (vCount_Total > (lock_count * vs_size))
-                lock_count++;
-
-            // calculate objects per lock
-            u32 o_total = items->size();
-            u32 o_per_lock = o_total / lock_count;
-            if (o_total > (o_per_lock * lock_count))
-                o_per_lock++;
+            const u32 o_total = u32(items->size());
+            if (!o_total)
+                continue;
+            const u32 vertexCapacity = _VS.GetSize() / (vCount_Object * soft_Geom->vb_stride);
+            const u32 indexCapacity = _IS.GetSize32() / (iCount_Object * sizeof(u32));
+            R_ASSERT2(vertexCapacity && indexCapacity, "Detail model exceeds dynamic geometry stream capacity");
+            const u32 preferred = _max(1u, vs_size / vCount_Object);
+            const u32 o_per_lock = _min(preferred, _min(vertexCapacity, indexCapacity));
+            const u32 lock_count = o_total / o_per_lock + (o_total % o_per_lock != 0);
 
             // Fill VB (and flush it as nesessary)
             RCache.set_Shader(Object.shader);
@@ -77,7 +75,7 @@ void CDetailManager::soft_Render(const Fsphere* bounds)
                 u32 vBase, iBase, iOffset = 0;
                 CDetail::fvfVertexOut* vDest =
                     (CDetail::fvfVertexOut*)_VS.Lock(vCount_Lock, soft_Geom->vb_stride, vBase);
-                u16* iDest = (u16*)_IS.Lock(iCount_Lock, iBase);
+                u32* iDest = _IS.Lock32(iCount_Lock, iBase);
 
                 // Filling itself
                 for (u32 item_idx = item_start; item_idx < item_end; ++item_idx)
@@ -120,22 +118,8 @@ void CDetailManager::soft_Render(const Fsphere* bounds)
                         }
                     }
 
-                    // Transfer indices (in 32bit lines)
-                    VERIFY(iOffset < 65535);
-                    {
-                        u32 item = (iOffset << 16) | iOffset;
-                        u32 count = Object.number_indices / 2;
-                        u32* sit = reinterpret_cast<u32*>(Object.indices);
-                        u32* send = sit + count;
-                        u32* dit = reinterpret_cast<u32*>(iDest);
-                        for (; sit != send; dit++, sit++)
-                            *dit = *sit + item;
-                        if (Object.number_indices & 1)
-                        {
-                            iDest[Object.number_indices - 1] =
-                                (u16)(Object.indices[Object.number_indices - 1] + u16(iOffset));
-                        }
-                    }
+                    for (u32 index = 0; index < Object.number_indices; ++index)
+                        iDest[index] = Object.indices[index] + iOffset;
 
                     // Increment counters
                     vDest += vCount_Object;
@@ -143,7 +127,7 @@ void CDetailManager::soft_Render(const Fsphere* bounds)
                     iOffset += vCount_Object;
                 }
                 _VS.Unlock(vCount_Lock, soft_Geom->vb_stride);
-                _IS.Unlock(iCount_Lock);
+                _IS.Unlock32(iCount_Lock);
 
                 // Render
                 u32 dwNumPrimitives = iCount_Lock / 3;

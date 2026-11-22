@@ -5,6 +5,7 @@
 #pragma once
 
 #include "SkeletonCustom.h"
+#include "MeshIndexView.h"
 #include "SkeletonXVertRender.h"
 #include "xrCDB/Intersect.hpp"
 
@@ -71,27 +72,27 @@ protected:
     virtual void _CollectBoneFaces(Fvisual* V, u32 iBase, u32 iCount) = 0;
 
     void _FillVerticesSoft1W(const Fmatrix& view, CSkeletonWallmark& wm, const Fvector& normal, float size,
-                             u16* indices, CBoneData::FacesVec& faces);
+                             MeshIndexView indices, CBoneData::FacesVec& faces);
 
     void _FillVerticesSoft2W(const Fmatrix& view, CSkeletonWallmark& wm, const Fvector& normal, float size,
-                             u16* indices, CBoneData::FacesVec& faces);
+                             MeshIndexView indices, CBoneData::FacesVec& faces);
 
     void _FillVerticesSoft3W(const Fmatrix& view, CSkeletonWallmark& wm, const Fvector& normal, float size,
-                             u16* indices, CBoneData::FacesVec& faces);
+                             MeshIndexView indices, CBoneData::FacesVec& faces);
 
     void _FillVerticesSoft4W(const Fmatrix& view, CSkeletonWallmark& wm, const Fvector& normal, float size,
-                             u16* indices, CBoneData::FacesVec& faces);
+                             MeshIndexView indices, CBoneData::FacesVec& faces);
 
     virtual void _FillVertices(const Fmatrix& view, CSkeletonWallmark& wm, const Fvector& normal, float size,
         Fvisual* V, u16 bone_id, u32 iBase, u32 iCount) = 0;
 
-    BOOL _PickBoneSoft1W(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, u16* indices,
+    BOOL _PickBoneSoft1W(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, MeshIndexView indices,
         CBoneData::FacesVec& faces);
-    BOOL _PickBoneSoft2W(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, u16* indices,
+    BOOL _PickBoneSoft2W(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, MeshIndexView indices,
         CBoneData::FacesVec& faces);
-    BOOL _PickBoneSoft3W(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, u16* indices,
+    BOOL _PickBoneSoft3W(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, MeshIndexView indices,
         CBoneData::FacesVec& faces);
-    BOOL _PickBoneSoft4W(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, u16* indices,
+    BOOL _PickBoneSoft4W(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, MeshIndexView indices,
         CBoneData::FacesVec& faces);
 
     virtual BOOL _PickBone(IKinematics::pick_result& r, float range, const Fvector& S, const Fvector& D, Fvisual* V,
@@ -116,7 +117,7 @@ public:
 
 template <typename T_vertex, typename T_buffer>
 BOOL pick_bone(T_buffer vertices, CKinematics* Parent, IKinematics::pick_result& r, float dist, const Fvector& S,
-    const Fvector& D, u16* indices, CBoneData::FacesVec& faces)
+    const Fvector& D, MeshIndexView indices, CBoneData::FacesVec& faces)
 {
     for (auto it = faces.begin(); it != faces.end(); ++it)
     {

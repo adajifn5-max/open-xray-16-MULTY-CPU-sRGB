@@ -112,9 +112,9 @@ void XM2IM(const Fmatrix& XM, Fmatrix& IM)
     IM.mul_43(tmp, xm2im);
 }
 void XM2IM(const Fmatrix& XM, Matrix& IM) { XM2IM(XM, *((Fmatrix*)(&IM))); }
-void IM2XM(const Matrix& IM, Fmatrix& XM) { XM2IM(*((Fmatrix*)(&IM)), XM); }
-void XV2IV(const Fvector& XV, IVektor& IV) { xm2im.transform_dir(cast_fv(IV), XV); }
-void IV2XV(const IVektor& IV, Fvector& XV) { xm2im.transform_dir(XV), cast_fv(IV); }
+//void IM2XM(const Matrix& IM, Fmatrix& XM) { XM2IM(*((Fmatrix*)(&IM)), XM); }
+//void XV2IV(const Fvector& XV, IVektor& IV) { xm2im.transform_dir(cast_fv(IV), XV); }
+//void IV2XV(const IVektor& IV, Fvector& XV) { xm2im.transform_dir(XV), (cast_fv(IV)); } //check
 IC Fmatrix& CIKLimb::ref_bone_to_foot(Fmatrix& ref_bone) const { return m_foot.ref_bone_to_foot(ref_bone); }
 void CIKLimb::ApplyState(SCalculateData& cd)
 {

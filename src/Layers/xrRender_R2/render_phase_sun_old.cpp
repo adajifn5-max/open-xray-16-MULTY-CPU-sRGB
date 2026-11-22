@@ -29,7 +29,7 @@ void render_sun_old::init()
     sun = (light*)RImplementation.Lights.sun._get();
 
     const Fcolor sun_color = sun->color;
-    o.active = ps_r2_ls_flags.test(R2FLAG_SUN) && (u_diffuse2s(sun_color.r, sun_color.g, sun_color.b) > EPS);
+    o.active = ps_r2_ls_flags.test(R2FLAG_SUN) && (sun_color.intensity() > EPS);
     if (RImplementation.o.sunstatic)
         o.active = false;
 
@@ -446,6 +446,14 @@ void render_sun_old::render_sun()
         bool bNormal = !dsgraph.mapNormalPasses[0][0].empty() || !dsgraph.mapMatrixPasses[0][0].empty();
         bool bSpecial = !dsgraph.mapNormalPasses[1][0].empty() || !dsgraph.mapMatrixPasses[1][0].empty() ||
             !dsgraph.mapSorted.empty();
+        #if defined(USE_DX11)
+        // Foliage LOD can remove the final caster. Never reuse its old depth.
+        if (!bNormal && !bSpecial)
+        {
+            RImplementation.Target->phase_smap_direct(dsgraph.cmd_list, sun, SE_SUN_FAR);
+            sun->X.D[SE_SUN_FAR].transluent = FALSE;
+        }
+        #endif
         if (bNormal || bSpecial)
         {
             RImplementation.Target->phase_smap_direct(dsgraph.cmd_list, sun, SE_SUN_FAR);
@@ -670,6 +678,14 @@ void render_sun_old::render_sun_near()
         bool bNormal = !dsgraph.mapNormalPasses[0][0].empty() || !dsgraph.mapMatrixPasses[0][0].empty();
         bool bSpecial = !dsgraph.mapNormalPasses[1][0].empty() || !dsgraph.mapMatrixPasses[1][0].empty() ||
             !dsgraph.mapSorted.empty();
+        #if defined(USE_DX11)
+        // Foliage LOD can remove the final caster. Never reuse its old depth.
+        if (!bNormal && !bSpecial)
+        {
+            RImplementation.Target->phase_smap_direct(dsgraph.cmd_list, sun, SE_SUN_NEAR);
+            sun->X.D[SE_SUN_NEAR].transluent = FALSE;
+        }
+        #endif
         if (bNormal || bSpecial)
         {
             RImplementation.Target->phase_smap_direct(dsgraph.cmd_list, sun, SE_SUN_NEAR);

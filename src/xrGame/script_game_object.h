@@ -233,6 +233,7 @@ public:
     void SetActorPosition(Fvector pos);
     void SetActorDirection(float dir);
     void SetNpcPosition(Fvector pos);
+    void SetNpcPositionFromSpawn(Fvector pos, LPCSTR source);
     void DisableHitMarks(bool disable);
     bool DisableHitMarks() const;
     Fvector GetMovementSpeed() const;

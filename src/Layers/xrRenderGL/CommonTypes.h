@@ -59,7 +59,7 @@ using ID3DState = glState;
 
 #define DX11_ONLY(expr)			do {} while (0)
 
-using unused_t = int[0];
+struct unused_t {};
 
 using IndexBufferHandle = GLuint;
 using VertexBufferHandle = GLuint;

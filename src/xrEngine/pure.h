@@ -85,20 +85,28 @@ public:
 
     void Process()
     {
+        ProcessWith([](T* object) { T::OnPure(object); });
+    }
+
+    // Invoke in the same order and retain deferred removal/capture semantics.
+    // The caller can surround each invocation with diagnostics.
+    template<class Invoke>
+    void ProcessWith(Invoke&& invoke)
+    {
         if (messages.empty())
             return;
 
         inProcess = true;
 
         if (messages[0].Prio == REG_PRIORITY_CAPTURE)
-            messages[0].Object->OnPure(messages[0].Object);
+            invoke(messages[0].Object);
         else
         {
             for (size_t i = 0; i < messages.size(); ++i)
             {
                 const auto& message = messages[i];
                 if (message.Prio != REG_PRIORITY_INVALID)
-                    message.Object->OnPure(message.Object);
+                    invoke(message.Object);
             }
         }
 

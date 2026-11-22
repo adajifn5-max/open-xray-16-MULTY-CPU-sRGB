@@ -12,6 +12,8 @@
 #include "script_binder.h"
 #include "xrServer_Objects_ALife.h"
 #include "script_binder_object.h"
+#include "script_binder_object_wrapper.h"
+#include <typeinfo>
 #include "script_game_object.h"
 #include "GameObject.h"
 #include "Level.h"
@@ -209,9 +211,234 @@ BOOL CScriptBinder::net_SaveRelevant()
     return (FALSE);
 }
 
-void CScriptBinder::net_Relcase(IGameObject* object)
+bool CScriptBinder::can_skip_net_relcase() const
 {
+    if (!m_object)
+        return true;
+
+    // Unknown C++ binders keep their virtual callbacks. Only the stock Lua
+    // wrapper has a known empty native net_Relcase implementation.
+    auto* wrapper = dynamic_cast<CScriptBinderObjectWrapper*>(m_object);
+    if (!wrapper || typeid(*wrapper) != typeid(CScriptBinderObjectWrapper))
+        return false;
+
+    return wrapper->can_skip_net_relcase();
+}
+
+void CScriptBinder::net_Relcase(IGameObject* object)
+
+
+    {
+#ifdef DEBUG
+
+    // Profile only smart_cover owners.
+    if (owner && owner->cNameSect().equal("smart_terrain"))
+    {
+        struct SmartTerrainProfile
+        {
+            u32 frame;
+
+            u32 calls;
+            u32 noBinder;
+            u32 castFail;
+            u32 castOk;
+
+            u32 luaObjectCalls;
+            u32 callbackCalls;
+            u32 exceptions;
+
+            float totalMs;
+            float smartCastMs;
+            float luaGameObjectMs;
+            float binderCallbackMs;
+        };
+
+        static SmartTerrainProfile p = {};
+
+        // Print previous frame statistics.
+        // Output is delayed until the next smart_cover call.
+        if (p.frame != Device.dwFrame)
+        {
+            if (p.calls)
+            {
+                const float avgTotalUs =
+                    p.totalMs * 1000.f / p.calls;
+
+                const float avgCastUs =
+                    (p.calls > p.noBinder)
+                    ? p.smartCastMs * 1000.f / (p.calls - p.noBinder)
+                    : 0.f;
+
+                const float avgLuaUs =
+                    p.luaObjectCalls
+                    ? p.luaGameObjectMs * 1000.f / p.luaObjectCalls
+                    : 0.f;
+
+                const float avgCallbackUs =
+                    p.callbackCalls
+                    ? p.binderCallbackMs * 1000.f / p.callbackCalls
+                    : 0.f;
+
+                Msg(
+                    "ST_BINDER_RELCASE frame=%u "
+                    "calls=%u no_binder=%u cast_fail=%u cast_ok=%u "
+                    "lua_object_calls=%u callback_calls=%u exceptions=%u | "
+                    "total=%.3f ms avg=%.2f us "
+                    "smart_cast=%.3f ms avg=%.2f us "
+                    "lua_game_object=%.3f ms avg=%.2f us "
+                    "binder_callback=%.3f ms avg=%.2f us",
+
+                    p.frame,
+
+                    p.calls,
+                    p.noBinder,
+                    p.castFail,
+                    p.castOk,
+
+                    p.luaObjectCalls,
+                    p.callbackCalls,
+                    p.exceptions,
+
+                    p.totalMs,
+                    avgTotalUs,
+
+                    p.smartCastMs,
+                    avgCastUs,
+
+                    p.luaGameObjectMs,
+                    avgLuaUs,
+
+                    p.binderCallbackMs,
+                    avgCallbackUs
+                );
+            }
+
+            p = SmartTerrainProfile{};
+            p.frame = Device.dwFrame;
+        }
+
+        CTimer tTotal;
+        tTotal.Start();
+
+        ++p.calls;
+
+        // 1. Binder check.
+        if (!m_object)
+        {
+            ++p.noBinder;
+
+            p.totalMs += tTotal.GetElapsed_sec() * 1000.f;
+            return;
+        }
+
+        // 2. smart_cast.
+        CTimer tStage;
+        tStage.Start();
+
+        CGameObject* game_object =
+            smart_cast<CGameObject*>(object);
+
+        p.smartCastMs +=
+            tStage.GetElapsed_sec() * 1000.f;
+
+        if (!game_object)
+        {
+            ++p.castFail;
+
+            p.totalMs += tTotal.GetElapsed_sec() * 1000.f;
+            return;
+        }
+
+        ++p.castOk;
+
+        // 3. lua_game_object + 4. Binder callback.
+        bool measuringLuaObject = true;
+
+        tStage.Start();
+
+        try
+        {
+            ++p.luaObjectCalls;
+
+            CScriptGameObject* luaObject =
+                game_object->lua_game_object();
+
+            p.luaGameObjectMs +=
+                tStage.GetElapsed_sec() * 1000.f;
+
+            measuringLuaObject = false;
+
+            ++p.callbackCalls;
+
+            tStage.Start();
+
+            m_object->net_Relcase(luaObject);
+
+            p.binderCallbackMs +=
+                tStage.GetElapsed_sec() * 1000.f;
+        }
+        catch (...)
+        {
+            const float msException =
+                tStage.GetElapsed_sec() * 1000.f;
+
+            if (measuringLuaObject)
+                p.luaGameObjectMs += msException;
+            else
+                p.binderCallbackMs += msException;
+
+            ++p.exceptions;
+
+            clear();
+        }
+
+        p.totalMs +=
+            tTotal.GetElapsed_sec() * 1000.f;
+
+        return;
+    }
+
+#endif // DEBUG
+
+    // Normal path for all other objects.
+    if (!m_object)
+        return;
+
+    CGameObject* game_object =
+        smart_cast<CGameObject*>(object);
+
+    if (!game_object)
+        return;
+
+    try
+    {
+        m_object->net_Relcase(
+            game_object->lua_game_object()
+        );
+    }
+    catch (...)
+    {
+        clear();
+    }
+
+    /* // No script binder: nothing to process.
+    if (!m_object)
+        return;
+
     CGameObject* game_object = smart_cast<CGameObject*>(object);
+
+    if (!game_object)
+        return;
+
+    try
+    {
+        m_object->net_Relcase(game_object->lua_game_object());
+    }
+    catch (...)
+    {
+        clear();
+
+    /*CGameObject* game_object = smart_cast<CGameObject*>(object);
     if (m_object && game_object)
     {
         try
@@ -221,6 +448,6 @@ void CScriptBinder::net_Relcase(IGameObject* object)
         catch (...)
         {
             clear();
-        }
+        }*/
     }
-}
+

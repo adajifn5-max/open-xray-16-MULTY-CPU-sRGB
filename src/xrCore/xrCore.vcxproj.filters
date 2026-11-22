@@ -719,6 +719,7 @@
     <ClInclude Include="Debug\StackTrace.h">
       <Filter>Debug core\StackTrace</Filter>
     </ClInclude>
+    <ClInclude Include="SoundProfileLite.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="xrCore.rc">

@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 
 #include "xrCore/FMesh.hpp"
 #include "FSkinned.h"
@@ -58,6 +59,7 @@ void CSkeletonX_ST::Release() { inherited1::Release(); }
 //////////////////////////////////////////////////////////////////////
 void CSkeletonX_PM::Load(const char* N, IReader* data, u32 dwFlags)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.skin_pm_load", N);
     _Load(N, data, vCount);
     void* _verts_ = data->pointer();
     inherited1::Load(N, data, dwFlags | VLOAD_NOVERTICES);
@@ -67,6 +69,7 @@ void CSkeletonX_PM::Load(const char* N, IReader* data, u32 dwFlags)
 }
 void CSkeletonX_ST::Load(const char* N, IReader* data, u32 dwFlags)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.skin_st_load", N);
     _Load(N, data, vCount);
     void* _verts_ = data->pointer();
     inherited1::Load(N, data, dwFlags | VLOAD_NOVERTICES);
@@ -119,6 +122,7 @@ constexpr auto PARALLEL_BONE_VERTICES_PROCESSING_MIN_VERTICES = 10000; // XXX: r
 template <typename TDst, typename TSrc>
 void load_hw(Fvisual& V, const TSrc* src)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.skin_convert_upload", "", V.vCount);
     V.vStride = GetDeclVertexSize(get_decl<TDst>(), 0);
     VERIFY(nullptr == V.p_rm_Vertices);
 
@@ -159,8 +163,14 @@ void load_hw(Fvisual& V, const TSrc* src)
             src++;
         }
     }
-    V.p_rm_Vertices->Unmap(true); // upload vertex data
-    V.rm_geom.create(get_decl<TDst>(), *V.p_rm_Vertices, *V.p_rm_Indices);
+    {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "render.skin_vb_upload", "", V.vCount);
+        V.p_rm_Vertices->Unmap(true); // upload vertex data
+    }
+    {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "render.skin_geometry", "", V.vCount);
+        V.rm_geom.create(get_decl<TDst>(), *V.p_rm_Vertices, *V.p_rm_Indices, V.p_rm_Indices->IndexStride());
+    }
 }
 
 void CSkeletonX_ext::_Load_hw(Fvisual& V, void* _verts_)
@@ -169,7 +179,7 @@ void CSkeletonX_ext::_Load_hw(Fvisual& V, void* _verts_)
     {
     case RM_SKINNING_SOFT:
         //Msg("skinning: software");
-        V.rm_geom.create(vertRenderFVF, RImplementation.Vertex.Buffer(), *V.p_rm_Indices);
+        V.rm_geom.create(vertRenderFVF, RImplementation.Vertex.Buffer(), *V.p_rm_Indices, V.p_rm_Indices->IndexStride());
         break;
 
     case RM_SINGLE:
@@ -215,7 +225,7 @@ void CSkeletonX_ext::_Load_hw(Fvisual& V, void* _verts_)
 
 template <typename vertex_type>
 static void verify_vertex(const vertex_type& v, const Fvisual* V, const CKinematics* Parent, u32 iBase, u32 iCount,
-    const u16* indices, u32 vertex_idx, u32 idx)
+    MeshIndexView indices, u32 vertex_idx, u32 idx)
 {
     VERIFY(Parent);
 #ifndef _EDITOR
@@ -223,7 +233,7 @@ static void verify_vertex(const vertex_type& v, const Fvisual* V, const CKinemat
         if (v.get_bone_id(i) >= Parent->LL_BoneCount())
         {
             Msg("v.get_bone_id(i): %d, Parent->LL_BoneCount() %d ", v.get_bone_id(i), Parent->LL_BoneCount());
-            Msg("&v: %p, &V: %p, indices: %p", &v, V, indices);
+            Msg("&v: %p, &V: %p, indices: %p", &v, V, indices.Data());
             Msg(" iBase: %d, iCount: %d, V->iBase %d, V->iCount %d, "
                 "V->vBase: %d, V->vCount %d, vertex_idx: %d, idx: %d",
                 iBase, iCount, V->iBase, V->iCount, V->vBase, V->vCount, vertex_idx, idx);
@@ -241,44 +251,44 @@ template <typename T>
 ICF void append_bone_faces(CKinematics* Parent, vertHW_1W<T>& v, u16 ChildIDX, u32 idx)
 {
     CBoneData& BD = Parent->LL_GetData(v.get_bone());
-    BD.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD.AppendFace(ChildIDX, idx / 3);
 }
 
 template <typename T>
 ICF void append_bone_faces(CKinematics* Parent, vertHW_2W<T>& v, u16 ChildIDX, u32 idx)
 {
     CBoneData& BD0 = Parent->LL_GetData(v.get_bone(0));
-    BD0.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD0.AppendFace(ChildIDX, idx / 3);
     CBoneData& BD1 = Parent->LL_GetData(v.get_bone(1));
-    BD1.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD1.AppendFace(ChildIDX, idx / 3);
 }
 
 template <typename T>
 ICF void append_bone_faces(CKinematics* Parent, vertHW_3W<T>& v, u16 ChildIDX, u32 idx)
 {
     CBoneData& BD0 = Parent->LL_GetData(v.get_bone(0));
-    BD0.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD0.AppendFace(ChildIDX, idx / 3);
     CBoneData& BD1 = Parent->LL_GetData(v.get_bone(1));
-    BD1.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD1.AppendFace(ChildIDX, idx / 3);
     CBoneData& BD2 = Parent->LL_GetData(v.get_bone(2));
-    BD2.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD2.AppendFace(ChildIDX, idx / 3);
 }
 
 template <typename T>
 ICF void append_bone_faces(CKinematics* Parent, vertHW_4W<T>& v, u16 ChildIDX, u32 idx)
 {
     CBoneData& BD0 = Parent->LL_GetData(v.get_bone(0));
-    BD0.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD0.AppendFace(ChildIDX, idx / 3);
     CBoneData& BD1 = Parent->LL_GetData(v.get_bone(1));
-    BD1.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD1.AppendFace(ChildIDX, idx / 3);
     CBoneData& BD2 = Parent->LL_GetData(v.get_bone(2));
-    BD2.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD2.AppendFace(ChildIDX, idx / 3);
     CBoneData& BD3 = Parent->LL_GetData(v.get_bone(3));
-    BD3.AppendFace(ChildIDX, (u16)(idx / 3));
+    BD3.AppendFace(ChildIDX, idx / 3);
 }
 
 template <typename T>
-void CSkeletonX_ext::_CollectBoneFacesHW(u16* indices, Fvisual* V, u32 iCount)
+void CSkeletonX_ext::_CollectBoneFacesHW(MeshIndexView indices, Fvisual* V, u32 iCount)
 {
     VERIFY(V->vStride == sizeof(T));
     T* vertices = static_cast<T*>(V->p_rm_Vertices->Map(V->vBase, V->vCount * V->vStride, true));
@@ -294,7 +304,7 @@ void CSkeletonX_ext::_CollectBoneFacesHW(u16* indices, Fvisual* V, u32 iCount)
 
 void CSkeletonX_ext::_CollectBoneFaces(Fvisual* V, u32 iBase, u32 iCount)
 {
-    u16* indices = static_cast<u16*>(V->p_rm_Indices->Map(0, V->dwPrimitives * 3, true));
+    MeshIndexView indices(V->p_rm_Indices->Map(0, size_t(V->iCount) * V->p_rm_Indices->IndexStride(), true), V->p_rm_Indices->IndexStride());
     indices += iBase;
 
     switch (RenderMode)
@@ -311,7 +321,7 @@ void CSkeletonX_ext::_CollectBoneFaces(Fvisual* V, u32 iBase, u32 iCount)
                 verify_vertex(v, V, Parent, iBase, iCount, indices, V->vBase + indices[idx], idx);
 #endif
                 CBoneData& BD = Parent->LL_GetData((u16)v.matrix);
-                BD.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD.AppendFace(ChildIDX, idx / 3);
             }
         }
         else if (*Vertices2W)
@@ -324,9 +334,9 @@ void CSkeletonX_ext::_CollectBoneFaces(Fvisual* V, u32 iBase, u32 iCount)
                 verify_vertex(v, V, Parent, iBase, iCount, indices, V->vBase + indices[idx], idx);
 #endif
                 CBoneData& BD0 = Parent->LL_GetData((u16)v.matrix0);
-                BD0.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD0.AppendFace(ChildIDX, idx / 3);
                 CBoneData& BD1 = Parent->LL_GetData((u16)v.matrix1);
-                BD1.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD1.AppendFace(ChildIDX, idx / 3);
             }
         }
         else if (*Vertices3W)
@@ -339,11 +349,11 @@ void CSkeletonX_ext::_CollectBoneFaces(Fvisual* V, u32 iBase, u32 iCount)
                 verify_vertex(v, V, Parent, iBase, iCount, indices, V->vBase + indices[idx], idx);
 #endif
                 CBoneData& BD0 = Parent->LL_GetData((u16)v.m[0]);
-                BD0.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD0.AppendFace(ChildIDX, idx / 3);
                 CBoneData& BD1 = Parent->LL_GetData((u16)v.m[1]);
-                BD1.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD1.AppendFace(ChildIDX, idx / 3);
                 CBoneData& BD2 = Parent->LL_GetData((u16)v.m[2]);
-                BD2.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD2.AppendFace(ChildIDX, idx / 3);
             }
         }
         else if (*Vertices4W)
@@ -356,13 +366,13 @@ void CSkeletonX_ext::_CollectBoneFaces(Fvisual* V, u32 iBase, u32 iCount)
                 verify_vertex(v, V, Parent, iBase, iCount, indices, V->vBase + indices[idx], idx);
 #endif
                 CBoneData& BD0 = Parent->LL_GetData((u16)v.m[0]);
-                BD0.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD0.AppendFace(ChildIDX, idx / 3);
                 CBoneData& BD1 = Parent->LL_GetData((u16)v.m[1]);
-                BD1.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD1.AppendFace(ChildIDX, idx / 3);
                 CBoneData& BD2 = Parent->LL_GetData((u16)v.m[2]);
-                BD2.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD2.AppendFace(ChildIDX, idx / 3);
                 CBoneData& BD3 = Parent->LL_GetData((u16)v.m[3]);
-                BD3.AppendFace(ChildIDX, (u16)(idx / 3));
+                BD3.AppendFace(ChildIDX, idx / 3);
             }
         }
         else
@@ -428,7 +438,7 @@ void get_pos_bones(const T& v, Fvector& p, CKinematics* Parent)
 
 template <typename T>
 BOOL pick_bone(CKinematics* Parent, IKinematics::pick_result& r, float dist, const Fvector& S, const Fvector& D,
-    Fvisual* V, u16* indices, CBoneData::FacesVec& faces)
+    Fvisual* V, MeshIndexView indices, CBoneData::FacesVec& faces)
 {
     void* data = static_cast<u8*>(V->p_rm_Vertices->Map(V->vBase, V->vCount * V->vStride, true)); // read-back
     T* vertices = static_cast<T*>(data);
@@ -444,7 +454,7 @@ BOOL CSkeletonX_ext::_PickBone(IKinematics::pick_result& r, float dist, const Fv
     CBoneData& BD = Parent->LL_GetData(bone_id);
     CBoneData::FacesVec& faces = BD.child_faces[ChildIDX];
     BOOL result = FALSE;
-    u16* indices = static_cast<u16*>(V->p_rm_Indices->Map(0, V->dwPrimitives * 3, true));
+    MeshIndexView indices(V->p_rm_Indices->Map(0, size_t(V->iCount) * V->p_rm_Indices->IndexStride(), true), V->p_rm_Indices->IndexStride());
     switch (RenderMode)
     {
     case RM_SKINNING_SOFT:
@@ -592,12 +602,12 @@ ICF void fill_face(CKinematics* parent, Fvector p[3], CSkeletonWallmark::WMFace&
 
 template <typename T>
 void fill_vertices_hw(CKinematics* parent, const Fmatrix& view, CSkeletonWallmark& wm, const Fvector& normal,
-    float size, Fvisual* V, u16* indices, CBoneData::FacesVec& faces)
+    float size, Fvisual* V, MeshIndexView indices, CBoneData::FacesVec& faces)
 {
     VERIFY(V->vStride == sizeof(T));
     T* vertices = static_cast<T*>(V->p_rm_Vertices->Map(V->vBase, V->vCount * V->vStride, true));
 
-    for (u16 face : faces)
+    for (u32 face : faces)
     {
         Fvector p[3];
         u32 idx = face * 3;
@@ -637,7 +647,7 @@ void CSkeletonX_ext::_FillVertices(const Fmatrix& view, CSkeletonWallmark& wm, c
     VERIFY(Parent && ChildIDX != u16(-1));
     CBoneData& BD = Parent->LL_GetData(bone_id);
     CBoneData::FacesVec* faces = &BD.child_faces[ChildIDX];
-    u16* indices = static_cast<u16*>(V->p_rm_Indices->Map(0, V->dwPrimitives * 3, true));
+    MeshIndexView indices(V->p_rm_Indices->Map(0, size_t(V->iCount) * V->p_rm_Indices->IndexStride(), true), V->p_rm_Indices->IndexStride());
     // fill vertices
     switch (RenderMode)
     {
@@ -703,9 +713,9 @@ void CSkeletonX_PM::FillVertices(
 
 template <typename vertex_buffer_type>
 void TEnumBoneVertices(
-    vertex_buffer_type vertices, u16* indices, CBoneData::FacesVec& faces, SEnumVerticesCallback& C)
+    vertex_buffer_type vertices, MeshIndexView indices, CBoneData::FacesVec& faces, SEnumVerticesCallback& C)
 {
-    for (u16 face : faces)
+    for (u32 face : faces)
     {
         u32 idx = face * 3;
         for (u32 k = 0; k < 3; k++)
@@ -722,7 +732,7 @@ void CSkeletonX_ext::_EnumBoneVertices(SEnumVerticesCallback& C, Fvisual* V, u16
     VERIFY(Parent && ChildIDX != u16(-1));
     CBoneData& BD = Parent->LL_GetData(bone_id);
     CBoneData::FacesVec* faces = &BD.child_faces[ChildIDX];
-    u16* indices = static_cast<u16*>(V->p_rm_Indices->Map(0, V->dwPrimitives * 3, true));
+    MeshIndexView indices(V->p_rm_Indices->Map(0, size_t(V->iCount) * V->p_rm_Indices->IndexStride(), true), V->p_rm_Indices->IndexStride());
 
     // fill vertices
     switch (RenderMode)

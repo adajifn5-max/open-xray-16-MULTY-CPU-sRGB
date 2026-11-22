@@ -252,8 +252,8 @@ void CRenderTarget::phase_combine()
     if (RImplementation.o.msaa)
     {
         // we need to resolve rt_Generic_1_r into rt_Generic_1
-        rt_Generic_0_r->resolve_into(*rt_Generic_0);
-        rt_Generic_1_r->resolve_into(*rt_Generic_1);
+        rt_Generic_0_r->resolve_into(*rt_Generic_0); //check
+        rt_Generic_1_r->resolve_into(*rt_Generic_1); //check
     }
 
     // for msaa we need a resolved color buffer - Holger
@@ -289,7 +289,7 @@ void CRenderTarget::phase_combine()
         PP_Complex = FALSE;
 
     // HOLGER - HACK
-    PP_Complex = TRUE;
+    PP_Complex = TRUE; //check
 
     // Combine everything + perform AA
     if (RImplementation.o.msaa)
@@ -550,8 +550,8 @@ if (0)		{
 void CRenderTarget::phase_wallmarks()
 {
     // Targets
-    RCache.set_RT(NULL, 2);
-    RCache.set_RT(NULL, 1);
+    RCache.set_RT(NULL, 2); //check
+    RCache.set_RT(NULL, 1); //check
     u_setrt(RCache, rt_Color, nullptr, nullptr, rt_MSAADepth);
     // Stencil	- draw only where stencil >= 0x1
     RCache.set_Stencil(TRUE, D3DCMP_LESSEQUAL, 0x01, 0xff, 0x00);

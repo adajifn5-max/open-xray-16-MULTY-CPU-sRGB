@@ -7,6 +7,7 @@
 #include "xrEngine/PerformanceAlert.hpp"
 
 #include "Layers/xrRender/FBasicVisual.h"
+#include "Layers/xrRender/FoliageLod.h"
 #include "Layers/xrRender/SkeletonCustom.h"
 #include "Layers/xrRender/dxWallMarkArray.h"
 #include "Layers/xrRender/dxUIShader.h"
@@ -53,6 +54,28 @@ ShaderElement* CRender::rimp_select_sh_static(dxRender_Visual* pVisual, float cd
 {
     if (!pVisual->shader)
         return nullptr;
+#if defined(USE_DX11) && !defined(_EDITOR)
+    // Only the explicitly marked alpha-tested TREE material participates.
+    // Bark, terrain, buildings, actors and CDetailManager keep their paths.
+    if (pVisual->Type == MT_TREE_ST || pVisual->Type == MT_TREE_PM)
+    {
+        ShaderElement* farFoliage = pVisual->shader->E[SE_R1_LMODELS]._get();
+        if (farFoliage && farFoliage->flags.bFoliageFar &&
+            foliage_lod::isFar(cdist_sq, pVisual->vis.sphere.R))
+        {
+            if (phase == PHASE_SMAP)
+                return nullptr; // Do not submit a distant leaf/grass shadow draw.
+            if (phase == PHASE_NORMAL)
+            {
+                // Linear scenes use the existing deferred LQ element so foliage
+                // shares G-buffer lighting and sky/fog composition with terrain.
+                if (o.linear_rendering)
+                    return pVisual->shader->E[SE_R2_NORMAL_LQ]._get();
+                return farFoliage; // Forward base texture + vertex lighting + fog.
+            }
+        }
+    }
+#endif
     int id = SE_R2_SHADOW;
     if (CRender::PHASE_NORMAL == phase)
     {
@@ -200,6 +223,13 @@ void CRender::create()
     ZoneScoped;
 
     Device.seqFrame.Add(this, REG_PRIORITY_HIGH + 0x12345678);
+
+#if RENDER == R_R4
+    o.linear_rendering = ps_r4_color_space == 1;
+#else
+    o.linear_rendering = false;
+#endif
+    Msg("* Colour pipeline: %s", o.linear_rendering ? "sRGB / Linear (experimental)" : "legacy");
 
     m_skinning = -1;
     m_MSAASample = -1;

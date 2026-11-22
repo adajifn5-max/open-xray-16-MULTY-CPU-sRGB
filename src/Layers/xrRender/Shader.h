@@ -70,14 +70,15 @@ struct ECORE_API SGeometry : public xr_resource_flagged
     VertexBufferHandle vb;
     IndexBufferHandle ib;
     u32 vb_stride;
+    u32 ib_stride{sizeof(u16)};
     SGeometry() = default;
     ~SGeometry();
 };
 
 struct ECORE_API resptrcode_geom : public resptr_base<SGeometry>
 {
-    void create(const VertexElement* decl, VertexBufferHandle vb, IndexBufferHandle ib);
-    void create(u32 FVF, VertexBufferHandle vb, IndexBufferHandle ib);
+    void create(const VertexElement* decl, VertexBufferHandle vb, IndexBufferHandle ib, u32 indexStride = sizeof(u16));
+    void create(u32 FVF, VertexBufferHandle vb, IndexBufferHandle ib, u32 indexStride = sizeof(u16));
     void destroy() { _set(nullptr); }
     u32 stride() const { return _get()->vb_stride; }
 };
@@ -121,6 +122,7 @@ struct ECORE_API ShaderElement : public xr_resource_flagged
         u32 bEmissive : 1;
         u32 bDistort : 1;
         u32 bWmark : 1;
+        u32 bFoliageFar : 1; // dedicated R4 distant alpha-tested TREE material
     };
 
     Sflags flags;

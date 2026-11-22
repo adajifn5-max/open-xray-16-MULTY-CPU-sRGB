@@ -1217,6 +1217,11 @@ void CPHMovementControl::CreateCharacter()
 #endif
     m_character->SetPosition(vPosition);
     m_character->SetCollisionDamageFactor(fCollisionDamageFactor * fCollisionDamageFactor);
+    if (bNonInteractiveMode)
+    {
+        m_character->SetNonInteractive(true);
+        m_character->Disable();
+    }
     trying_times[0] = trying_times[1] = trying_times[2] = trying_times[3] = u32(-1);
     trying_poses[0].set(vPosition);
     trying_poses[1].set(vPosition);
@@ -1243,6 +1248,11 @@ void CPHMovementControl::UnFreeze()
 
 void CPHMovementControl::ActivateBox(u32 id, BOOL Check /*false*/)
 {
+    if (!ValidBoxId(id))
+    {
+        Msg("! [physics.box] rejected ActivateBox index=%u count=4", id);
+        return;
+    }
     if (Check && (m_dwCurBox == id))
         return;
     m_dwCurBox = id;
@@ -1260,6 +1270,11 @@ void CPHMovementControl::ActivateBox(u32 id, BOOL Check /*false*/)
 }
 void CPHMovementControl::InterpolateBox(u32 id, float k)
 {
+    if (!ValidBoxId(id))
+    {
+        Msg("! [physics.box] rejected InterpolateBox index=%u count=4", id);
+        return;
+    }
     if (m_dwCurBox == id)
         return;
     if (!m_character || !m_character->b_exist)
@@ -1545,7 +1560,12 @@ void CPHMovementControl::SetNonInteractive(bool v)
 {
     VERIFY(m_character);
     if (!m_character->b_exist)
+    {
+        // Animation control may start in Lua net_Spawn before CreateCharacter.
+        // Remember the mode so creation cannot silently re-enable physics motion.
+        bNonInteractiveMode = v;
         return;
+    }
     if (bNonInteractiveMode == v)
         return;
     if (v)

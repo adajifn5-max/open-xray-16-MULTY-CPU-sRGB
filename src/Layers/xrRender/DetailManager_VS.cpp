@@ -46,6 +46,13 @@ void CDetailManager::hw_Load_Geom()
     // Analyze batch-size
     hw_BatchSize = (u32(HW.Caps.geometry.dwRegisters) - c_hdr) / c_size;
     clamp<size_t>(hw_BatchSize, 0, 64);
+    // Keep replicated high-density detail geometry within the fourfold vertex
+    // address budget; one large model must not be duplicated 64 times in VB/IB.
+    for (const auto* object : objects)
+    {
+        if (object->number_vertices)
+            hw_BatchSize = _min(hw_BatchSize, _max<size_t>(1, (4u * 65536u) / object->number_vertices));
+    }
     Msg("* [DETAILS] VertexConsts(%u), Batch(%zu)", u32(HW.Caps.geometry.dwRegisters), hw_BatchSize);
 
     // Pre-process objects
@@ -59,7 +66,7 @@ void CDetailManager::hw_Load_Geom()
     }
     u32 vSize = sizeof(vertHW);
     Msg("* [DETAILS] %d v(%d), %d p", dwVerts, vSize, dwIndices / 3);
-    Msg("* [DETAILS] Batch(%d), VB(%dK), IB(%dK)", hw_BatchSize, (dwVerts * vSize) / 1024, (dwIndices * 2) / 1024);
+    Msg("* [DETAILS] Batch(%d), VB(%dK), IB(%dK)", hw_BatchSize, (dwVerts * vSize) / 1024, (dwIndices * sizeof(u32)) / 1024);
 
     // Fill VB
     hw_VB.Create(dwVerts * vSize);
@@ -89,29 +96,32 @@ void CDetailManager::hw_Load_Geom()
     }
 
     // Fill IB
-    hw_IB.Create(dwIndices * sizeof(u16));
+    hw_IB.Create(size_t(dwIndices) * sizeof(u32), false, true, sizeof(u32));
     {
-        u16* pI = static_cast<u16*>(hw_IB.Map());
+        u32* pI = static_cast<u32*>(hw_IB.Map());
         for (u32 o = 0; o < objects.size(); o++)
         {
             const CDetail& D = *objects[o];
-            u16 offset = 0;
+            u32 offset = 0;
             for (u32 batch = 0; batch < hw_BatchSize; batch++)
             {
                 for (u32 i = 0; i < u32(D.number_indices); i++)
-                    *pI++ = u16(u16(D.indices[i]) + u16(offset));
-                offset = u16(offset + u16(D.number_vertices));
+                    *pI++ = D.indices[i] + offset;
+                offset += D.number_vertices;
             }
         }
         hw_IB.Unmap(true); // upload index data
     }
 
     // Declare geometry
-    hw_Geom.create(dwDecl, hw_VB, hw_IB);
+    hw_Geom.create(dwDecl, hw_VB, hw_IB, sizeof(u32));
 }
 
 void CDetailManager::hw_Unload()
 {
+#if defined(USE_DX11)
+    hw_UnloadWind();
+#endif
     // Destroy VS/VB/IB
     if (hw_Geom)
         hw_Geom.destroy();

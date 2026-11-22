@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "IGame_Level.h"
+#include "xrSound/SoundCatalog.h"
 #include "IGame_Persistent.h"
 
 #include "CustomHUD.h"
@@ -106,6 +107,8 @@ bool IGame_Level::Load(u32 dwNum)
 
     // Initialize level data
     g_pGamePersistent->Level_Set(dwNum);
+    if (!GEnv.isDedicatedServer)
+        SoundCatalogPrepareLevel();
     string_path temp;
     if (!FS.exist(temp, "$level$", "level.ltx"))
         xrDebug::Fatal(DEBUG_INFO, "Can't find level configuration file '%s'.", temp);

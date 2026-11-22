@@ -32,6 +32,7 @@ TODO
 
 #include <ode/common.h>
 #include <ode/timer.h>
+#include <limits.h>
 
 // misc defines
 #define ALLOCA dALLOCA16
@@ -378,6 +379,15 @@ void dTimerReport (FILE *fout, int average)
     size_t l = strlen (event[i].description);
     if (l > maxl) maxl = l;
   }
+  if (maxl > static_cast<size_t>(INT_MAX)) {
+      fprintf(fout, "Timer report: description width exceeds INT_MAX.\n");
+      return;
+  }
+
+  const int descriptionWidth = static_cast<int>(maxl);
+
+
+
 
   // calculate total time
   double t1 = loadClockCount (event[0].cc);
@@ -407,7 +417,7 @@ void dTimerReport (FILE *fout, int average)
       t = total;
       p = 100.0;
     }
-    fprintf (fout,"%-*s %7.2fms %6.2f%%",maxl,event[i].description,
+    fprintf (fout,"%-*s %7.2fms %6.2f%%", descriptionWidth,event[i].description,
 	     t*ccunit * 1000.0, p);
     if (average && i < (num-1)) {
       fprintf (fout,"  (avg %7.2fms %6.2f%%)",

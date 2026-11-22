@@ -1,6 +1,7 @@
 #pragma once
 #include "xrMessages.h"
 #include "xrCommon/xr_deque.h"
+#include <utility>
 
 extern BOOL g_bCheckTime;
 extern int g_dwEventDelay;
@@ -8,10 +9,10 @@ extern int g_dwEventDelay;
 class NET_Event
 {
 public:
-    u16 ID;
-    u32 timestamp;
-    u16 type;
-    u16 destination;
+    u16 ID = 0;
+    u32 timestamp = 0;
+    u16 type = 0;
+    u16 destination = u16(-1);
     xr_vector<u8> data;
 
 public:
@@ -75,17 +76,29 @@ public:
 IC bool operator<(const NET_Event& A, const NET_Event& B) { return A.timestamp < B.timestamp; }
 class NET_Queue_Event
 {
+private:
+    size_t pendingDestroyCount = 0;
+
+    static bool is_destroy(const NET_Event& event)
+    {
+        return event.ID == M_EVENT && (event.type == GE_DESTROY || event.type == GE_DESTROY_REJECT);
+    }
+
 public:
     //	xr_multiset<NET_Event>	queue;
     xr_deque<NET_Event> queue;
 
 public:
+    bool has_pending_destroy() const { return pendingDestroyCount != 0; }
+
     IC void insert(NET_Packet& P)
     {
         NET_Event E;
         E.import(P);
+        if (is_destroy(E))
+            ++pendingDestroyCount;
         //		queue.insert	(E);
-        queue.push_back(E);
+        queue.push_back(std::move(E));
         /*
         //-------------------------------------------
 #ifdef DEBUG
@@ -132,6 +145,8 @@ public:
         type = E.type;
         E.implication(P);
         //		queue.erase			(queue.begin());
+        if (is_destroy(E))
+            --pendingDestroyCount;
         queue.pop_front();
     }
 };

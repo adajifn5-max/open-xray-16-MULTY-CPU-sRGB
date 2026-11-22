@@ -897,7 +897,15 @@ void CBaseMonster::add_debug_info(debug::text_tree& root_s)
     u32 object_count = 0;
     for (SoundIterator i = sound().objects().begin(), e = sound().objects().end(); i != e; ++i)
     {
-        object_count += (*i).second.second->m_sounds.size();
+        const auto& entry = (*i).second.second;
+
+if (entry->ready())
+{
+    object_count +=
+        static_cast<u32>(entry->collection->m_sounds.size());
+}
+        
+        //object_count += (*i).second.second->m_sounds.size();
     }
 
     TextTree& now_playing_s = sound_player_s.add_line("Objects", object_count);

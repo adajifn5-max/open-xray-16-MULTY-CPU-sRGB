@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #pragma hdrstop
 
 #include "../xrRender/ResourceManager.h"
@@ -175,8 +176,10 @@ void CTexture::Load()
 {
     flags.bLoaded = true;
     desc_cache = 0;
-    if (pSurface) return;
+    // SEQ resources already exist before the first apply_seq selects pSurface.
+    if (pSurface || !seqDATA.empty()) return;
 
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.texture_load", cName.c_str());
     flags.bUser = false;
     flags.MemoryUsage = 0;
     if (nullptr == cName.c_str())
@@ -284,6 +287,7 @@ void CTexture::Load()
     }
     else if (FS.exist(fn, "$game_textures$", cName.c_str(), ".seq"))
     {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "render.texture_seq", cName.c_str());
         // Sequence
         string256 buffer;
         IReader* _fs = FS.r_open(fn);
@@ -304,6 +308,7 @@ void CTexture::Load()
             _Trim(buffer);
             if (buffer[0])
             {
+                XR_STUTTER_DISABLED_SCOPE(Phase, "render.seq_frame", buffer, seqDATA.size());
                 // Load another texture
                 u32 mem = 0;
                 pSurface = RImplementation.texture_load(buffer, mem, desc, m_loaded_width, m_loaded_height);

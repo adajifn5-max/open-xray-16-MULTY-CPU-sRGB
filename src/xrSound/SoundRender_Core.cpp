@@ -1,5 +1,5 @@
 #include "stdafx.h"
-
+#include "xrCore/SoundProfileLite.h" //gpt code
 #include "Include/xrAPI/xrAPI.h"
 #include "Common/LevelStructure.hpp"
 #include "SoundRender_Core.h"
@@ -58,6 +58,8 @@ void CSoundRender_Core::_initialize()
 
 void CSoundRender_Core::_clear()
 {
+
+SoundProfileLite::Sources().Report("Sound source cache");
     bReady = false;
 
     // remove sources

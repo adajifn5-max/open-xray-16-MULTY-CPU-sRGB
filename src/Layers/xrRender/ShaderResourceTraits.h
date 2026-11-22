@@ -1,4 +1,5 @@
 #pragma once
+#include "ShaderCompileTasks.h"
 
 #include "ResourceManager.h"
 
@@ -655,13 +656,20 @@ T* CResourceManager::CreateShader(cpcstr name, pcstr filename /*= nullptr*/, u32
         return iterator->second;
     else
     {
-        T* sh = xr_new<T>();
+        bool preparing = false;
+#if defined(USE_DX11)
+        preparing = ShaderCompileTasks::Preparing();
+#endif
+        T* sh = preparing ? nullptr : xr_new<T>();
 
-        sh->dwFlags |= xr_resource_flagged::RF_REGISTERED;
-        sh_map.emplace(sh->set_name(name), sh);
+        if (!preparing)
+        {
+            sh->dwFlags |= xr_resource_flagged::RF_REGISTERED;
+            sh_map.emplace(sh->set_name(name), sh);
+        }
         if (0 == xr_stricmp(name, "null"))
         {
-            sh->sh = 0;
+            if (sh) sh->sh = 0;
             return sh;
         }
 
@@ -685,6 +693,7 @@ T* CResourceManager::CreateShader(cpcstr name, pcstr filename /*= nullptr*/, u32
 
         // Try to open
         IReader* file = FS.r_open(cname);
+        if (!file && preparing) return nullptr;
 
         // Here we can fallback to "stub_default"
         bool fallback = m_shader_fallback_allowed;
@@ -728,9 +737,29 @@ T* CResourceManager::CreateShader(cpcstr name, pcstr filename /*= nullptr*/, u32
 #endif
 
         // Compile
-        HRESULT const _hr = RImplementation.shader_compile(name, file, c_entry, c_target, flags, (void*&)sh);
+
+        #ifdef XR_SHADER_CACHE_DIAG
+        T* const originalShader = sh;
+#endif
+
+        HRESULT const _hr = RImplementation.shader_compile(
+            name, file, c_entry, c_target, flags, (void*&)sh);
+
+/*#ifdef XR_SHADER_CACHE_DIAG
+        Msg("[SHADER_PTR] name=%s type=%s before=%p after=%p hr=0x%08X changed=%d",
+            name,
+            ShaderTypeTraits<T>::GetShaderExt(),
+            static_cast<void*>(originalShader),
+            static_cast<void*>(sh),
+            static_cast<unsigned>(_hr),
+            originalShader != sh ? 1 : 0);
+#endif*/
+
+        //HRESULT const _hr = RImplementation.shader_compile(name, file, c_entry, c_target, flags, (void*&)sh);
 
         FS.r_close(file);
+
+        if (preparing) return nullptr;
 
         VERIFY(SUCCEEDED(_hr));
 

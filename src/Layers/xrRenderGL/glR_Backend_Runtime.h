@@ -303,15 +303,16 @@ ICF void CBackend::set_Vertices(GLuint _vb, u32 _vb_stride)
     }
 }
 
-ICF void CBackend::set_Indices(GLuint _ib)
+ICF void CBackend::set_Indices(GLuint _ib, u32 indexStride)
 {
-    if (ib != _ib)
+    if (ib != _ib || ib_stride != indexStride)
     {
         PGO(Msg("PGO:IB:%x", _ib));
 #ifdef DEBUG
 		stat.ib++;
 #endif
         ib = _ib;
+        ib_stride = indexStride;
 #ifdef XR_PLATFORM_WEB
         if (g_boundDeclaration)
             g_boundDeclaration->bound_ib = ib;
@@ -397,16 +398,16 @@ ICF void CBackend::SetBaseVertex(u32 baseV)
 
 ICF void CBackend::DrawIndexedBaseVertex(GLenum topology, u32 indexCount, u32 startI, u32 baseV)
 {
-    const void* indices = (void*)(startI * sizeof(GLushort));
+    const void* indices = (void*)(size_t(startI) * ib_stride);
     if (HW.BaseVertexDrawSupported)
     {
         SetBaseVertex(0);
         glDrawElementsInstancedBaseVertexBaseInstanceWEBGL(
-            topology, indexCount, GL_UNSIGNED_SHORT, indices, 1, baseV, 0);
+            topology, indexCount, ib_stride == sizeof(u32) ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, indices, 1, baseV, 0);
         return;
     }
     SetBaseVertex(baseV);
-    CHK_GL(glDrawElements(topology, indexCount, GL_UNSIGNED_SHORT, indices));
+    CHK_GL(glDrawElements(topology, indexCount, ib_stride == sizeof(u32) ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, indices));
 }
 #endif
 
@@ -422,7 +423,7 @@ ICF void CBackend::Render(D3DPRIMITIVETYPE T, u32 baseV, u32 startV, u32 countV,
 #ifdef XR_PLATFORM_WEB
     DrawIndexedBaseVertex(Topology, iIndexCount, startI, baseV);
 #else
-    CHK_GL(glDrawElementsBaseVertex(Topology, iIndexCount, GL_UNSIGNED_SHORT, (void*)(startI * sizeof(GLushort)), baseV));
+    CHK_GL(glDrawElementsBaseVertex(Topology, iIndexCount, ib_stride == sizeof(u32) ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, (void*)(size_t(startI) * ib_stride), baseV));
 #endif
     PGO(Msg("PGO:DIP:%dv/%df", countV, PC));
 }
@@ -448,7 +449,7 @@ IC void CBackend::set_Geometry(SGeometry* _geom)
     set_Format(&*_geom->dcl);
 
     set_Vertices(_geom->vb, _geom->vb_stride);
-    set_Indices(_geom->ib);
+    set_Indices(_geom->ib, _geom->ib_stride);
 }
 
 IC void CBackend::set_Scissor(const Irect* R)

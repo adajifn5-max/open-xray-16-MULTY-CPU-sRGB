@@ -7,7 +7,7 @@ void D3DXRenderBase::CreateQuadIB()
 {
     ZoneScoped;
 
-    constexpr auto triCount = 4 * 1024;
+    constexpr auto triCount = 4 * 1024 * 4; // 16,384 quads, exactly 65,536 vertices
     constexpr auto idxCount = triCount * 2 * 3;
     constexpr auto idxSize = idxCount * sizeof(u16);
 

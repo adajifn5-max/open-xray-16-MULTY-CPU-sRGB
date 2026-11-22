@@ -1,4 +1,5 @@
 #include "StdAfx.h"
+#include "xrCore/StutterProfile.h"
 #include "Artefact.h"
 #include "xrPhysics/PhysicsShell.h"
 #include "PhysicsShellHolder.h"
@@ -51,6 +52,7 @@ CArtefact::CArtefact()
 CArtefact::~CArtefact() {}
 void CArtefact::Load(LPCSTR section)
 {
+    XR_STUTTER_DISABLED_SCOPE(Spawn, "CArtefact::Load", section);
     inherited::Load(section);
 
     if (pSettings->line_exist(section, "particles"))
@@ -87,9 +89,13 @@ bool CArtefact::net_Spawn(CSE_Abstract* DC)
         m_detectorObj = xr_new<SArtefactDetectorsSupport>(this);
 
     bool result = inherited::net_Spawn(DC);
-    SwitchAfParticles(true);
-
-    StartLights();
+    // In single player, attachment immediately stops these effects. Do not create
+    // particle/shader/light resources just to destroy them for an inventory item.
+    if (!IsGameTypeSingle() || DC->ID_Parent == u16(-1))
+    {
+        SwitchAfParticles(true);
+        StartLights();
+    }
     m_CarringBoneID = u16(-1);
     IKinematicsAnimated* K = smart_cast<IKinematicsAnimated*>(Visual());
     if (K && K->ID_Cycle_Safe("idle"))

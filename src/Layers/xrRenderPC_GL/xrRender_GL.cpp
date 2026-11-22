@@ -22,12 +22,17 @@ class RGLRendererModule final : public RendererModule
 public:
     bool CheckCanAddMode() const
     {
+        #ifdef XR_PLATFORM_WINDOWS
+    // Disable OpenGL renderer on Windows.
+    return false;
+#else
         // don't duplicate
         if (!modes.empty())
         {
             return false;
         }
         return xrRender_test_hw();
+        #endif
     }
 
     const xr_vector<std::pair<pcstr, int>>& ObtainSupportedModes() override

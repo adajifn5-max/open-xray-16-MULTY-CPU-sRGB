@@ -157,8 +157,15 @@ private:
             ClientSendInternal.FrameEnd();
             BulletManagerCommit.FrameEnd();
         }
+        
     };
     ClientStatistics stats;
+
+    // Combined NPC/item spawn time; shared by all event-processing calls this frame.
+    u32 m_spawnBudgetFrame = u32(-1);
+    double m_spawnBudgetUsedMs = 0.0;
+bool m_destroyDrainDeferred = false; // новий фрейм
+u32 m_destroyDrainDeferredFrame = 0; // новий фрейм
 
 public:
 #ifdef DEBUG
@@ -298,7 +305,8 @@ public:
     void net_StartPlayDemo() override;
     void cl_Process_Event(u16 dest, u16 type, NET_Packet& P);
     void cl_Process_Spawn(NET_Packet& P);
-    void ProcessGameEvents();
+    // Only OnFrame requests the soft spawn budget; cleanup/loading drain synchronously.
+    void ProcessGameEvents(bool limitSpawns = false);
     void ProcessGameSpawns();
     void ProcessCompressedUpdate(NET_Packet& P, const Flags8& compression_type);
 

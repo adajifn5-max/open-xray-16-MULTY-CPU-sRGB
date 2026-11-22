@@ -17,6 +17,23 @@
 #include "xrAICore/Navigation/game_graph.h"
 #include "xrServer.h"
 
+
+#ifdef DEBUG
+static u64 g_invbox_online_calls = 0;
+static u64 g_invbox_online_items = 0;
+
+static u64 g_invbox_destroy_ticks = 0;
+static u64 g_invbox_destroy_max_ticks = 0;
+
+static u64 g_invbox_spawn_ticks = 0;
+static u64 g_invbox_spawn_max_ticks = 0;
+
+static u64 g_invbox_total_ticks = 0;
+static u64 g_invbox_total_max_ticks = 0;
+
+static u64 g_invbox_qpc_frequency = 0;
+#endif
+
 void CSE_ALifeDynamicObject::on_spawn()
 {
 #ifdef DEBUG
@@ -67,6 +84,18 @@ void CSE_ALifeDynamicObject::switch_offline()
 
 void CSE_ALifeDynamicObject::add_online(const bool& update_registries)
 {
+    #ifdef DEBUG
+LARGE_INTEGER qpc_frequency;
+LARGE_INTEGER qpc_total_start;
+
+QueryPerformanceFrequency(&qpc_frequency);
+g_invbox_qpc_frequency = static_cast<u64>(qpc_frequency.QuadPart);
+
+QueryPerformanceCounter(&qpc_total_start);
+
+//++g_invbox_online_calls;
+#endif
+
     if (!update_registries)
         return;
 
@@ -184,6 +213,13 @@ bool CSE_ALifeDynamicObject::redundant() const { return (false); }
 
 void CSE_ALifeInventoryBox::add_online(const bool& update_registries)
 {
+    #ifdef DEBUG
+    LARGE_INTEGER qpc_total_start;
+    QueryPerformanceCounter(&qpc_total_start);
+
+   ++g_invbox_online_calls;
+#endif
+
     CSE_ALifeDynamicObjectVisual* object = (this);
 
     NET_Packet tNetPacket;
@@ -194,13 +230,38 @@ void CSE_ALifeInventoryBox::add_online(const bool& update_registries)
     ALife::OBJECT_IT I = object->children.begin();
     ALife::OBJECT_IT E = object->children.end();
     for (; I != E; ++I)
-    {
+{
+        #ifdef DEBUG
+    ++g_invbox_online_items;
+#endif
+
+    
         CSE_ALifeDynamicObject* l_tpALifeDynamicObject = ai().alife().objects().object(*I);
         CSE_ALifeInventoryItem* l_tpALifeInventoryItem = smart_cast<CSE_ALifeInventoryItem*>(l_tpALifeDynamicObject);
         R_ASSERT2(l_tpALifeInventoryItem, "Non inventory item object has parent?!");
         l_tpALifeInventoryItem->base()->s_flags._or (M_SPAWN_UPDATE);
         CSE_Abstract* l_tpAbstract = smart_cast<CSE_Abstract*>(l_tpALifeInventoryItem);
-        object->alife().server().entity_Destroy(l_tpAbstract);
+
+        #ifdef DEBUG
+LARGE_INTEGER qpc_start, qpc_end;
+QueryPerformanceCounter(&qpc_start);
+#endif
+
+object->alife().server().entity_Destroy(l_tpAbstract);
+
+#ifdef DEBUG
+QueryPerformanceCounter(&qpc_end);
+
+const u64 destroy_ticks =
+    static_cast<u64>(qpc_end.QuadPart - qpc_start.QuadPart);
+
+g_invbox_destroy_ticks += destroy_ticks;
+
+if (destroy_ticks > g_invbox_destroy_max_ticks)
+    g_invbox_destroy_max_ticks = destroy_ticks;
+#endif
+
+        //object->alife().server().entity_Destroy(l_tpAbstract);
 
 #ifdef DEBUG
         //		if (psAI_Flags.test(aiALife))
@@ -213,12 +274,47 @@ void CSE_ALifeInventoryBox::add_online(const bool& update_registries)
 
         l_tpALifeDynamicObject->o_Position = object->o_Position;
         l_tpALifeDynamicObject->m_tNodeID = object->m_tNodeID;
-        object->alife().server().Process_spawn(tNetPacket, clientID, FALSE, l_tpALifeInventoryItem->base());
+
+        #ifdef DEBUG
+QueryPerformanceCounter(&qpc_start);
+#endif
+
+object->alife().server().Process_spawn(
+    tNetPacket, clientID, FALSE, l_tpALifeInventoryItem->base());
+
+#ifdef DEBUG
+QueryPerformanceCounter(&qpc_end);
+
+const u64 spawn_ticks =
+    static_cast<u64>(qpc_end.QuadPart - qpc_start.QuadPart);
+
+g_invbox_spawn_ticks += spawn_ticks;
+
+if (spawn_ticks > g_invbox_spawn_max_ticks)
+    g_invbox_spawn_max_ticks = spawn_ticks;
+
+//++g_invbox_online_items;
+#endif
+
+        //object->alife().server().Process_spawn(tNetPacket, clientID, FALSE, l_tpALifeInventoryItem->base());
         l_tpALifeDynamicObject->s_flags._and (u16(-1) ^ M_SPAWN_UPDATE);
         l_tpALifeDynamicObject->m_bOnline = true;
     }
 
     CSE_ALifeDynamicObjectVisual::add_online(update_registries);
+
+    #ifdef DEBUG
+LARGE_INTEGER qpc_total_end;
+QueryPerformanceCounter(&qpc_total_end);
+
+const u64 total_ticks =
+    static_cast<u64>(qpc_total_end.QuadPart - qpc_total_start.QuadPart);
+
+g_invbox_total_ticks += total_ticks;
+
+if (total_ticks > g_invbox_total_max_ticks)
+    g_invbox_total_max_ticks = total_ticks;
+#endif
 }
 
 void CSE_ALifeInventoryBox::add_offline(

@@ -1,5 +1,9 @@
 #include "pch_script.h"
+#include "xrCore/StutterProfile.h"
 #include "GameObject.h"
+#include "smart_cover_object.h"
+#include "space_restrictor.h"
+#include <typeinfo>
 
 #include "Include/xrRender/RenderVisual.h"
 #include "xrPhysics/PhysicsShell.h"
@@ -118,6 +122,7 @@ void CGameObject::cName_set(shared_str N) { NameObject = N; }
 void CGameObject::cNameSect_set(shared_str N) { NameSection = N; }
 void CGameObject::cNameVisual_set(shared_str N)
 {
+    XR_STUTTER_NPC_SCOPE(Spawn, "CGameObject::visual", N.c_str());
     // check if equal
     if (N.c_str() && NameVisual.c_str())
         if (N == NameVisual)
@@ -127,7 +132,11 @@ void CGameObject::cNameVisual_set(shared_str N)
     {
         IRenderVisual* old_v = renderable.visual;
         NameVisual = N;
-        renderable.visual = GEnv.Render->model_Create(N.c_str());
+        renderable.visual = [&]()
+        {
+            XR_STUTTER_NPC_SCOPE(Spawn, "render.model_Create", N.c_str());
+            return GEnv.Render->model_Create(N.c_str());
+        }();
         IKinematics* old_k = old_v ? old_v->dcast_PKinematics() : NULL;
         IKinematics* new_k = renderable.visual->dcast_PKinematics();
         /*
@@ -220,6 +229,7 @@ const Fbox& CGameObject::BoundingBox() const
 
 void CGameObject::Load(LPCSTR section)
 {
+    XR_STUTTER_NPC_SCOPE(Spawn, "CGameObject::Load", section);
     // Name
     R_ASSERT(section);
     cName_set(section);
@@ -420,6 +430,7 @@ void VisualCallback(IKinematics* tpKinematics);
 
 bool CGameObject::net_Spawn(CSE_Abstract* DC)
 {
+    XR_STUTTER_NPC_SCOPE(Spawn, "CGameObject::net_Spawn", DC->s_name.c_str(), DC->ID);
     VERIFY(!m_spawned);
     m_spawned = true;
     m_spawn_time = Device.dwFrame;
@@ -471,6 +482,16 @@ bool CGameObject::net_Spawn(CSE_Abstract* DC)
     // XForm
     XFORM().setXYZ(E->o_Angle);
     Position().set(E->o_Position);
+#if XRAY_ENABLE_STUTTER_TIMERS
+    if (StutterProfile::InNpcSpawn() && StutterProfile::Enabled(StutterProfile::Category::Phase))
+    {
+        char detail[96];
+        xr_sprintf(detail, "xyz=%.9g,%.9g,%.9g", double(Position().x), double(Position().y), double(Position().z));
+        StutterProfile::Scope serverPosition;
+        serverPosition.Begin(StutterProfile::Category::Phase, "spawn.position.server", detail, E->ID);
+        serverPosition.AsPoint();
+    }
+#endif
 #ifdef DEBUG
     if (ph_dbg_draw_mask1.test(ph_m1_DbgTrackObject) && xr_stricmp(PH_DBG_ObjectTrackName(), cName().c_str()) == 0)
     {
@@ -1255,6 +1276,17 @@ u32 CGameObject::ef_detector_type() const
     CLSID2TEXT(CLS_ID, temp);
     R_ASSERT3(false, "Invalid detector type request, virtual function is not properly overridden!", temp);
     return (u32(-1));
+}
+
+bool CGameObject::can_skip_net_relcase()
+{
+    // Exact types only: derived restrictors/zones may own native references
+    // and override net_Relcase even when their script binder does nothing.
+    const std::type_info& objectType = typeid(*this);
+    if (objectType != typeid(smart_cover::object) && objectType != typeid(CSpaceRestrictor))
+        return false;
+
+    return GEnv.isDedicatedServer || scriptBinder.can_skip_net_relcase();
 }
 
 void CGameObject::net_Relcase(IGameObject* O)

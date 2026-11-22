@@ -36,6 +36,8 @@
   <ItemGroup>
     <ClInclude Include="OpenALDeviceList.h" />
     <ClInclude Include="Sound.h" />
+    <ClInclude Include="SoundCatalog.h" />
+    <ClInclude Include="SoundCatalogCache.h" />
     <ClInclude Include="SoundRender.h" />
     <ClInclude Include="SoundRender_Core.h" />
     <ClInclude Include="SoundRender_CoreA.h" />
@@ -56,6 +58,7 @@
     </ClCompile>
     <ClCompile Include="OpenALDeviceList.cpp" />
     <ClCompile Include="Sound.cpp" />
+    <ClCompile Include="SoundCatalog.cpp" />
     <ClCompile Include="SoundRender_Core.cpp" />
     <ClCompile Include="SoundRender_CoreA.cpp" />
     <ClCompile Include="SoundRender_Core_Processor.cpp" />

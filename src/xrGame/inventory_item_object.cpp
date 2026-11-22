@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "pch_script.h"
+#include "xrCore/StutterProfile.h"
 #include "inventory_item_object.h"
 
 CInventoryItemObject::CInventoryItemObject() {}
@@ -20,6 +21,7 @@ IFactoryObject* CInventoryItemObject::_construct()
 
 void CInventoryItemObject::Load(LPCSTR section)
 {
+    XR_STUTTER_DISABLED_SCOPE(Spawn, "CInventoryItemObject::Load", section);
     CPhysicItem::Load(section);
     CInventoryItem::Load(section);
 }

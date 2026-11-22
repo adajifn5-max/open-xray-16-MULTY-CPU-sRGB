@@ -1,5 +1,6 @@
 #include "pch_script.h"
 #include "Level.h"
+#include "deferred_alife_save.h"
 #include "Level_Bullet_Manager.h"
 #include "xrServer.h"
 #include "xrMessages.h"
@@ -29,6 +30,10 @@ extern bool g_b_ClearGameCaptions;
 
 void CLevel::remove_objects()
 {
+    // Materialize deferred client spawns before SLS_Clear removes their server
+    // entities. No spawn budget is permitted during level teardown.
+    if (IsGameTypeSingle())
+        ProcessGameEvents();
     if (!IsGameTypeSingle())
         Msg("CLevel::remove_objects - Start");
     BOOL b_stored = psDeviceFlags.test(rsDisableObjectsAsCrows);
@@ -119,6 +124,7 @@ extern CUISequencer* g_tutorial2;
 
 void CLevel::net_Stop()
 {
+    cancel_deferred_alife_save();
     Msg("- Disconnect");
 
     if (CurrentGameUI())
@@ -518,6 +524,9 @@ void CLevel::OnConnectResult(NET_Packet* P)
 
 void CLevel::ClearAllObjects()
 {
+    // The snapshots below must include objects deferred by the last gameplay frame.
+    if (IsGameTypeSingle())
+        ProcessGameEvents();
     u32 CLObjNum = Level().Objects.o_count();
 
     bool ParentFound = true;

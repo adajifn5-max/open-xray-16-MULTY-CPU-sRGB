@@ -1,4 +1,5 @@
 #pragma once
+#include "xrCore/StutterProfile.h"
 
 #include "Layers/xrRender/D3DXRenderBase.h"
 #include "Layers/xrRender/r__occlusion.h"
@@ -48,12 +49,18 @@ struct i_render_phase
 
         main_task = &TaskScheduler->CreateTask([this]
         {
-            calculate();
+            {
+                XR_STUTTER_SCOPE(Task, "renderer.task.phase", name.c_str(),
+                    reinterpret_cast<std::uintptr_t>(main_task));
+                calculate();
+            }
 
             if (o.mt_draw_enabled)
             {
                 draw_task = &TaskScheduler->AddTask(*main_task, [this]
                 {
+                    XR_STUTTER_SCOPE(Task, "renderer.task.phase_draw", name.c_str(),
+                        reinterpret_cast<std::uintptr_t>(main_task));
                     render();
                 });
             }
@@ -72,7 +79,11 @@ struct i_render_phase
     ICF void sync()
     {
         if (main_task)
+        {
+            XR_STUTTER_SCOPE(Wait, "renderer.wait.phase", name.c_str(),
+                reinterpret_cast<std::uintptr_t>(main_task));
             TaskScheduler->Wait(*main_task);
+        }
         main_task = nullptr;
 
         if (o.mt_draw_enabled && draw_task)
@@ -239,6 +250,7 @@ public:
         u32 Tshadows : 1; // transluent shadows
         u32 oldshadowcascades : 1;
         u32 disasm : 1;
+        u32 linear_rendering : 1; // R4 opt-in scene-linear pipeline
         u32 advancedpp : 1; //	advanced post process (DOF, SSAO, volumetrics, etc.)
         u32 volumetricfog : 1;
 

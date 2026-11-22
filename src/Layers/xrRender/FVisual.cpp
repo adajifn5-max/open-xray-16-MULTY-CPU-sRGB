@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #pragma hdrstop
 
 #include "xrCore/FMesh.hpp"
@@ -20,6 +21,7 @@ Fvisual::~Fvisual()
 void Fvisual::Release() { dxRender_Visual::Release(); }
 void Fvisual::Load(const char* N, IReader* data, u32 dwFlags)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.visual_geometry_load", N);
     dxRender_Visual::Load(N, data, dwFlags);
 
     u32 fvf = 0;
@@ -88,7 +90,7 @@ void Fvisual::Load(const char* N, IReader* data, u32 dwFlags)
             m_fast->p_rm_Indices->AddRef();
 
             // geom
-            m_fast->rm_geom.create(fmt, *m_fast->p_rm_Vertices, *m_fast->p_rm_Indices);
+            m_fast->rm_geom.create(fmt, *m_fast->p_rm_Vertices, *m_fast->p_rm_Indices, m_fast->p_rm_Indices->IndexStride());
         }
     }
 
@@ -123,7 +125,10 @@ void Fvisual::Load(const char* N, IReader* data, u32 dwFlags)
             p_rm_Vertices->Create(vCount * vStride);
             u8* bytes = static_cast<u8*>(p_rm_Vertices->Map());
             CopyMemory(bytes, data->pointer(), vCount * vStride);
-            p_rm_Vertices->Unmap(true); // upload vertex data
+            {
+                XR_STUTTER_DISABLED_SCOPE(Phase, "render.visual_vb_upload", N, vCount);
+                p_rm_Vertices->Unmap(true); // upload vertex data
+            }
         }
     }
 
@@ -146,26 +151,40 @@ void Fvisual::Load(const char* N, IReader* data, u32 dwFlags)
         }
         else
         {
-            R_ASSERT(data->find_chunk(OGF_INDICES));
+            const u32 indexChunkSize = data->find_chunk(OGF_INDICES);
+            R_ASSERT2(indexChunkSize >= sizeof(u32), "Missing mesh index data");
             iBase = 0;
-            iCount = data->r_u32();
+            const u32 taggedCount = data->r_u32();
+            const u32 indexStride = (taggedCount & xrOGF_Index32) ? sizeof(u32) : sizeof(u16);
+            iCount = taggedCount & ~xrOGF_Index32;
             dwPrimitives = iCount / 3;
+            R_ASSERT2(iCount && iCount % 3 == 0, "Invalid mesh triangle index count");
+            R_ASSERT2(size_t(iCount) * indexStride <= indexChunkSize - sizeof(u32), "Truncated mesh index data");
 
             VERIFY(nullptr == p_rm_Indices);
             p_rm_Indices = xr_new<IndexStagingBuffer>();
-            p_rm_Indices->Create(iCount * 2, true); // indices are read in model-wallmarks code
+            p_rm_Indices->Create(size_t(iCount) * indexStride, true, true, indexStride); // indices are read in model-wallmarks code
             u8* bytes = static_cast<u8*>(p_rm_Indices->Map());
-            CopyMemory(bytes, data->pointer(), iCount * 2);
-            p_rm_Indices->Unmap(true); // upload index data
+            CopyMemory(bytes, data->pointer(), size_t(iCount) * indexStride);
+            for (u32 index = 0; index < iCount; ++index)
+            {
+                const u32 vertex = indexStride == sizeof(u32) ? reinterpret_cast<const u32*>(bytes)[index]
+                                                             : reinterpret_cast<const u16*>(bytes)[index];
+                R_ASSERT2(vertex < vCount, "Mesh index exceeds vertex count");
+            }
+            {
+                XR_STUTTER_DISABLED_SCOPE(Phase, "render.visual_ib_upload", N, iCount);
+                p_rm_Indices->Unmap(true); // upload index data
+            }
         }
     }
 
     if (dwFlags & VLOAD_NOVERTICES)
         return;
     else if (fvf)
-        rm_geom.create(fvf, *p_rm_Vertices, *p_rm_Indices);
+        rm_geom.create(fvf, *p_rm_Vertices, *p_rm_Indices, p_rm_Indices->IndexStride());
     else
-        rm_geom.create(vFormat, *p_rm_Vertices, *p_rm_Indices);
+        rm_geom.create(vFormat, *p_rm_Vertices, *p_rm_Indices, p_rm_Indices->IndexStride());
 }
 
 void Fvisual::Render(CBackend& cmd_list, float, bool use_fast_geo)

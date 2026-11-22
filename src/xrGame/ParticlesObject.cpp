@@ -1,4 +1,5 @@
 #include "StdAfx.h"
+#include "xrCore/StutterProfile.h"
 
 #include "ParticlesObject.h"
 #include "xrEngine/defines.h"
@@ -218,6 +219,7 @@ void CParticlesObject::PerformAllTheWork(u32 _dt)
 
 void CParticlesObject::PerformAllTheWork_mt()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CParticlesObject::PerformAllTheWork_mt");
     if (GEnv.isDedicatedServer)
         return;
 

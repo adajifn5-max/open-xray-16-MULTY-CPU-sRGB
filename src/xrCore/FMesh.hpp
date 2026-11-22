@@ -109,8 +109,8 @@ struct ogf_header
 struct XRCORE_API FSlideWindow
 {
     u32 offset;
-    u16 num_tris;
-    u16 num_verts;
+    u32 num_tris;
+    u32 num_verts;
 };
 struct XRCORE_API FSlideWindowItem
 {
@@ -119,6 +119,31 @@ struct XRCORE_API FSlideWindowItem
     u32 reserved[4];
     FSlideWindowItem() : sw(0), count(0){};
 };
+
+// Geometry extensions. Old assets use u16 indices and u16 SWI counts.
+// The count tag applies only to OGF_INDICES / level fsL_IB payloads,
+// never to OGF_GCONTAINER counts or offsets.
+constexpr u32 xrOGF_Index32 = 0x80000000u;
+constexpr u32 xrOGF_Swi32 = 0x32335753u; // little-endian "SW32"
+
+template <typename Reader>
+inline void ReadSlideWindows(Reader& reader, FSlideWindowItem& item)
+{
+    for (u32& value : item.reserved)
+        value = reader.r_u32();
+    item.count = reader.r_u32();
+    R_ASSERT2(item.count, "Empty progressive mesh slide-window table");
+    const bool wide = item.reserved[0] == xrOGF_Swi32;
+    R_ASSERT2(size_t(item.count) <= size_t(reader.elapsed()) / (wide ? 12 : 8),
+        "Truncated progressive mesh slide-window table");
+    item.sw = xr_alloc<FSlideWindow>(item.count);
+    for (u32 i = 0; i < item.count; ++i)
+    {
+        item.sw[i].offset = reader.r_u32();
+        item.sw[i].num_tris = wide ? reader.r_u32() : reader.r_u16();
+        item.sw[i].num_verts = wide ? reader.r_u32() : reader.r_u16();
+    }
+}
 
 // OGF_TEXTURE1
 // Z-String - name

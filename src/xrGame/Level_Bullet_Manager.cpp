@@ -3,6 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "StdAfx.h"
+#include "xrCore/StutterProfile.h"
 #include "Level.h"
 #include "Level_Bullet_Manager.h"
 #include "game_cl_base.h"
@@ -203,6 +204,7 @@ void CBulletManager::AddBullet(const Fvector& position, const Fvector& direction
 
 void CBulletManager::UpdateWorkload()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CBulletManager::UpdateWorkload");
     ZoneScoped;
 
     VERIFY(g_mt_config.test(mtBullets) || m_thread_id == std::this_thread::get_id());

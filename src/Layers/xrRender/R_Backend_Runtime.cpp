@@ -60,6 +60,7 @@ void CBackend::Invalidate()
     decl = nullptr;
     vb = 0;
     ib = 0;
+    ib_stride = sizeof(u16);
     vb_stride = 0;
 
     state = nullptr;
@@ -194,13 +195,20 @@ void CBackend::set_Textures(STextureList* textures_list)
     int _last_ds = -1;
     int _last_cs = -1;
 #endif
+#if defined(USE_DX11)
+    // Re-evaluate the view when one texture is used as colour and data in adjacent passes.
+    // SRVSManager still suppresses redundant D3D calls.
+    const bool forceColorBinding = RImplementation.o.linear_rendering;
+#else
+    constexpr bool forceColorBinding = false;
+#endif
     auto it = textures_list->begin();
     const auto end = textures_list->end();
 
     for (; it != end; ++it)
     {
         std::pair<u32, ref_texture>& loader = *it;
-        u32 load_id = loader.first;
+        u32 load_id = loader.first & 0x7fffffffu;
         CTexture* load_surf = loader.second._get();
         //if (load_id < 256) {
         if (load_id < CTexture::rstVertex)
@@ -213,7 +221,7 @@ void CBackend::set_Textures(STextureList* textures_list)
 #ifdef XR_PLATFORM_WEB
             usedPS |= 1u << load_id;
 #endif
-            if (textures_ps[load_id] != load_surf || (load_surf && (load_surf->last_slice != load_surf->curr_slice)))
+            if (forceColorBinding || textures_ps[load_id] != load_surf || (load_surf && (load_surf->last_slice != load_surf->curr_slice)))
             {
                 textures_ps[load_id] = load_surf;
                 stat.textures++;
@@ -221,7 +229,7 @@ void CBackend::set_Textures(STextureList* textures_list)
                 if (load_surf)
                 {
                     PGO(Msg("PGO:tex%d:%s", load_id, load_surf->cName.c_str()));
-                    load_surf->bind(*this, load_id);
+                    load_surf->bind(*this, loader.first);
                     //load_surf->Apply(load_id);
                     load_surf->last_slice = load_surf->curr_slice;
 #ifdef XR_PLATFORM_WEB
@@ -245,7 +253,7 @@ void CBackend::set_Textures(STextureList* textures_list)
 #ifdef XR_PLATFORM_WEB
             usedVS |= 1u << load_id_remapped;
 #endif
-            if (textures_vs[load_id_remapped] != load_surf)
+            if (forceColorBinding || textures_vs[load_id_remapped] != load_surf)
             {
                 textures_vs[load_id_remapped] = load_surf;
                 stat.textures++;
@@ -253,7 +261,7 @@ void CBackend::set_Textures(STextureList* textures_list)
                 if (load_surf)
                 {
                     PGO(Msg("PGO:tex%d:%s", load_id, load_surf->cName.c_str()));
-                    load_surf->bind(*this, load_id);
+                    load_surf->bind(*this, loader.first);
                     //load_surf->Apply(load_id);
 #ifdef XR_PLATFORM_WEB
                     occupied_texture_units |= 1u << load_id;
@@ -271,7 +279,7 @@ void CBackend::set_Textures(STextureList* textures_list)
             u32 load_id_remapped = load_id - CTexture::rstGeometry;
             if ((int)load_id_remapped > _last_gs)
                 _last_gs = load_id_remapped;
-            if (textures_gs[load_id_remapped] != load_surf)
+            if (forceColorBinding || textures_gs[load_id_remapped] != load_surf)
             {
                 textures_gs[load_id_remapped] = load_surf;
                 stat.textures++;
@@ -279,7 +287,7 @@ void CBackend::set_Textures(STextureList* textures_list)
                 if (load_surf)
                 {
                     PGO(Msg("PGO:tex%d:%s", load_id, load_surf->cName.c_str()));
-                    load_surf->bind(*this, load_id);
+                    load_surf->bind(*this, loader.first);
                     //load_surf->Apply(load_id);
                 }
             }
@@ -293,7 +301,7 @@ void CBackend::set_Textures(STextureList* textures_list)
             u32 load_id_remapped = load_id - CTexture::rstHull;
             if ((int)load_id_remapped > _last_hs)
                 _last_hs = load_id_remapped;
-            if (textures_hs[load_id_remapped] != load_surf)
+            if (forceColorBinding || textures_hs[load_id_remapped] != load_surf)
             {
                 textures_hs[load_id_remapped] = load_surf;
                 stat.textures++;
@@ -301,7 +309,7 @@ void CBackend::set_Textures(STextureList* textures_list)
                 if (load_surf)
                 {
                     PGO(Msg("PGO:tex%d:%s", load_id, load_surf->cName.c_str()));
-                    load_surf->bind(*this, load_id);
+                    load_surf->bind(*this, loader.first);
                     //load_surf->Apply(load_id);
                 }
             }
@@ -315,7 +323,7 @@ void CBackend::set_Textures(STextureList* textures_list)
             u32 load_id_remapped = load_id - CTexture::rstDomain;
             if ((int)load_id_remapped > _last_ds)
                 _last_ds = load_id_remapped;
-            if (textures_ds[load_id_remapped] != load_surf)
+            if (forceColorBinding || textures_ds[load_id_remapped] != load_surf)
             {
                 textures_ds[load_id_remapped] = load_surf;
                 stat.textures++;
@@ -323,7 +331,7 @@ void CBackend::set_Textures(STextureList* textures_list)
                 if (load_surf)
                 {
                     PGO(Msg("PGO:tex%d:%s", load_id, load_surf->cName.c_str()));
-                    load_surf->bind(*this, load_id);
+                    load_surf->bind(*this, loader.first);
                     //load_surf->Apply(load_id);
                 }
             }
@@ -337,7 +345,7 @@ void CBackend::set_Textures(STextureList* textures_list)
             u32 load_id_remapped = load_id - CTexture::rstCompute;
             if ((int)load_id_remapped > _last_cs)
                 _last_cs = load_id_remapped;
-            if (textures_cs[load_id_remapped] != load_surf)
+            if (forceColorBinding || textures_cs[load_id_remapped] != load_surf)
             {
                 textures_cs[load_id_remapped] = load_surf;
                 stat.textures++;
@@ -345,7 +353,7 @@ void CBackend::set_Textures(STextureList* textures_list)
                 if (load_surf)
                 {
                     PGO(Msg("PGO:tex%d:%s", load_id, load_surf->cName.c_str()));
-                    load_surf->bind(*this, load_id);
+                    load_surf->bind(*this, loader.first);
                     //load_surf->Applyload_id);
                 }
             }

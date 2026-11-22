@@ -4,6 +4,7 @@
 #include "ResourceManager.h"
 #include "Blender_Recorder.h"
 #include "Blender.h"
+#include "ShaderCompileTasks.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -25,6 +26,9 @@ void CBlender_Compile::r_Pass(LPCSTR _vs, LPCSTR _ps, bool bFog, BOOL bZtest, BO
     PassSET_LightFog(FALSE, bFog);
 
     // Create shaders
+#if defined(USE_DX11)
+    ShaderCompileTasks::Batch shaderBatch(_vs, _ps);
+#endif
 #if defined(USE_OGL)
     dest.pp = RImplementation.Resources->_CreatePP(_vs, _ps, "null", "null", "null");
     if (GLAD_GL_ARB_separate_shader_objects || !dest.pp->pp)

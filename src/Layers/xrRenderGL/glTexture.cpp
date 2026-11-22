@@ -3,6 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 
 #include <gli/gli.hpp>
 
@@ -60,6 +61,7 @@ u32 calc_texture_size(int lod, u32 mip_cnt, size_t orig_size)
 
 GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32& ret_width, u32& ret_height)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.dds_load", fRName);
     ret_msize = 0;
     R_ASSERT1_CURE(fRName && fRName[0], { return 0; });
 
@@ -102,15 +104,24 @@ GLuint CRender::texture_load(pcstr fRName, u32& ret_msize, GLenum& ret_desc, u32
     }
 
     // Load and get header
-    IReader* S = FS.r_open(fn);
+    IReader* S = [&]()
+    {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "render.dds_open", fn);
+        return FS.r_open(fn);
+    }();
     R_ASSERT2_CURE(S, fn, { return 0; });
     size_t img_size = S->length();
 #ifdef DEBUG
     Msg("* Loaded: %s[%d]b", fn, img_size);
 #endif // DEBUG
-    gli::texture texture = gli::load((char*)S->pointer(), img_size);
+    gli::texture texture = [&]()
+    {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "render.dds_parse", fRName);
+        return gli::load((char*)S->pointer(), img_size);
+    }();
     R_ASSERT2(!texture.empty(), fn);
 
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.dds_gpu", fRName);
     u32 mip_cnt = u32(-1); // XXX: write to it when reading with GLI!
 
 #ifdef XR_PLATFORM_WEB

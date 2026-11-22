@@ -48,12 +48,15 @@ private:
 class ECORE_API _IndexStream
 {
     IndexStreamBuffer pIB;
+    IndexStreamBuffer pIB32;
+    u32 mPosition32{};
     u32 mSize{}; // real size (usually mCount, aligned on 512b boundary)
     u32 mPosition{};
     u32 mDiscardID{};
 
 public:
     IndexBufferHandle old_pIB{};
+    IndexBufferHandle old_pIB32{};
 
 public:
     _IndexStream() = default;
@@ -65,10 +68,14 @@ public:
     void reset_end();
 
     IndexBufferHandle Buffer() const { return pIB; }
+    IndexBufferHandle Buffer32() const { return pIB32; }
     u32 DiscardID() const { return mDiscardID; }
-    void Flush() { mPosition = mSize; }
+    void Flush() { mPosition = mSize; mPosition32 = mSize; }
     u16* Lock(u32 Count, u32& vOffset);
     void Unlock(u32 RealCount);
+    u32* Lock32(u32 Count, u32& indexOffset);
+    void Unlock32(u32 RealCount);
+    u32 GetSize32() const { return mSize * 2; }
     u32 GetSize() const { return mSize; }
 
 private:
@@ -76,6 +83,7 @@ private:
     {
         mSize = 0;
         mPosition = 0;
+        mPosition32 = 0;
         mDiscardID = 0;
     }
 };

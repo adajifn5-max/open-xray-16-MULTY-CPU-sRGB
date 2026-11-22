@@ -24,6 +24,7 @@ BIND_DECLARE(p);
 BIND_DECLARE(wv);
 BIND_DECLARE(vp);
 BIND_DECLARE(wvp);
+BIND_DECLARE(gbuffer_projection);
 
 #define DECLARE_TREE_BIND(c)\
     class cl_tree_##c : public R_constant_setup\
@@ -386,6 +387,7 @@ void CBlender_Compile::SetMapping()
     r_Constant("m_WV", &binder_wv);
     r_Constant("m_VP", &binder_vp);
     r_Constant("m_WVP", &binder_wvp);
+    r_Constant("gbuffer_projection", &binder_gbuffer_projection);
 
     r_Constant("m_xform_v", &tree_binder_m_xform_v);
     r_Constant("m_xform", &tree_binder_m_xform);

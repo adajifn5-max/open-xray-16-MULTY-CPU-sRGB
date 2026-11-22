@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 
 #include "ModelPool.h"
 
@@ -66,6 +67,7 @@ dxRender_Visual* CModelPool::Instance_Create(u32 type)
 
 dxRender_Visual* CModelPool::Instance_Duplicate(dxRender_Visual* V)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ModelPool.duplicate", "");
     R_ASSERT(V);
     dxRender_Visual* N = Instance_Create(V->Type);
     N->Copy(V);
@@ -82,6 +84,7 @@ dxRender_Visual* CModelPool::Instance_Duplicate(dxRender_Visual* V)
 
 dxRender_Visual* CModelPool::Instance_Load(const char* N, BOOL allow_register)
 {
+    XR_STUTTER_SCOPE(Phase, "ModelPool.load_file", N);
     string_path fn;
     string_path name;
 
@@ -91,24 +94,29 @@ dxRender_Visual* CModelPool::Instance_Load(const char* N, BOOL allow_register)
     else
         xr_strcpy(name, sizeof(name), N);
 
-    // Load data from MESHES or LEVEL
-    if (!FS.exist(N))
     {
-        if (!FS.exist(fn, "$level$", name))
-            if (!FS.exist(fn, "$game_meshes$", name))
-            {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "ModelPool.fs_resolve", N);
+        // Load data from MESHES or LEVEL
+        if (!FS.exist(N))
+        {
+            if (!FS.exist(fn, "$level$", name))
+                if (!FS.exist(fn, "$game_meshes$", name))
+                {
 #ifdef _EDITOR
-                Msg("! Can't find model file '%s'.", name);
-                return 0;
+                    Msg("! Can't find model file '%s'.", name);
+                    return 0;
 #else
-                xrDebug::Fatal(DEBUG_INFO, "Can't find model file '%s'.", name);
+                    xrDebug::Fatal(DEBUG_INFO, "Can't find model file '%s'.", name);
 #endif
-            }
+                }
+        }
+        else
+        {
+            xr_strcpy(fn, N);
+        }
     }
-    else
-    {
-        xr_strcpy(fn, N);
-    }
+
+
 
 // Actual loading
 #ifdef DEBUG
@@ -116,11 +124,18 @@ dxRender_Visual* CModelPool::Instance_Load(const char* N, BOOL allow_register)
         Msg("- Uncached model loading: %s", fn);
 #endif // DEBUG
 
-    IReader* data = FS.r_open(fn);
+    IReader* data = [&]()
+    {
+        XR_STUTTER_SCOPE(Phase, "ModelPool.fs_open", fn);
+        return FS.r_open(fn);
+    }();
     ogf_header H;
     data->r_chunk_safe(OGF_HEADER, &H, sizeof(H));
     dxRender_Visual* V = Instance_Create(H.type);
-    V->Load(N, data, 0);
+    {
+        XR_STUTTER_SCOPE(Phase, "ModelPool.visual_load", N, H.type);
+        V->Load(N, data, 0);
+    }
     FS.r_close(data);
 
     // Register material
@@ -161,12 +176,16 @@ dxRender_Visual* CModelPool::Instance_Load(const char* N, BOOL allow_register)
 
 dxRender_Visual* CModelPool::Instance_Load(LPCSTR name, IReader* data, BOOL allow_register)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ModelPool.load_stream", name);
     dxRender_Visual* V;
 
     ogf_header H;
     data->r_chunk_safe(OGF_HEADER, &H, sizeof(H));
     V = Instance_Create(H.type);
-    V->Load(name, data, 0);
+    {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "ModelPool.visual_load", name, H.type);
+        V->Load(name, data, 0);
+    }
 
     // Registration
     if (allow_register)
@@ -243,6 +262,7 @@ dxRender_Visual* CModelPool::Instance_Find(LPCSTR N)
 
 dxRender_Visual* CModelPool::Create(const char* name, IReader* data)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ModelPool.create", name);
 #ifdef _EDITOR
     if (!name || !name[0])
         return 0;
@@ -259,6 +279,7 @@ dxRender_Visual* CModelPool::Create(const char* name, IReader* data)
     POOL_IT it = Pool.find(low_name);
     if (it != Pool.end())
     {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "ModelPool.pool_hit", low_name);
         // 1. Instance found
         dxRender_Visual* Model = it->second;
         Model->Spawn();
@@ -270,6 +291,7 @@ dxRender_Visual* CModelPool::Create(const char* name, IReader* data)
         // 1. Search for already loaded model (reference, base model)
         dxRender_Visual* Base = Instance_Find(low_name);
 
+        XR_STUTTER_DISABLED_SCOPE(Phase, Base ? "ModelPool.base_hit" : "ModelPool.cache_miss", low_name);
         if (nullptr == Base)
         {
             // 2. If not found
@@ -293,6 +315,7 @@ dxRender_Visual* CModelPool::Create(const char* name, IReader* data)
 
 dxRender_Visual* CModelPool::CreateChild(LPCSTR name, IReader* data)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ModelPool.child", name);
     string256 low_name;
     VERIFY(xr_strlen(name) < 256);
     xr_strcpy(low_name, name);

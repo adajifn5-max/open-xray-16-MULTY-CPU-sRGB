@@ -35,6 +35,9 @@ extern class CBlockAllocator<dJointFeedback, 128> ContactFeedBacks;
 extern CBlockAllocator<CPHContactBodyEffector, 128> ContactEffectors;
 // void NearCallback(void* /*data*/, dGeomID o1, dGeomID o2);
 void NearCallback(CPHObject* obj1, CPHObject* obj2, dGeomID o1, dGeomID o2);
+// Internal scope for a placement probe: collide only the probe against fixed obstacles.
+dGeomID ExchangePlacementQueryGeom(dGeomID geom) noexcept;
+bool IsPlacementQueryActive() noexcept;
 void CollideStatic(dGeomID o2, CPHObject* obj2);
 
 class CPHElement;

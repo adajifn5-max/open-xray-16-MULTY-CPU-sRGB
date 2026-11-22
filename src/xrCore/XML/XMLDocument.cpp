@@ -19,42 +19,51 @@ enum class ParseIncludeResult
 };
 
 // Given a string of the form: '#include "filename"' we return the filename in 'out_include_name'
+
 ParseIncludeResult ParseInclude(pstr string, pcstr& out_include_name)
 {
     // Skip any whitespace characters
-    while (*string != '\0' && std::isblank(*string))
+    while (*string != '\0' &&
+    std::isblank(static_cast<unsigned char>(*string)))
     {
         ++string;
     }
 
     // Check for #include
     static constexpr pcstr IncludeTag = "#include";
+
     if (std::strncmp(string, IncludeTag, 8) != 0)
         return ParseIncludeResult::NoInclude;
 
     string += 8;
 
     // Skip any whitespace characters
-    while (*string != '\0' && std::isblank(*string))
+    while (*string != '\0' &&
+        std::isblank(static_cast<unsigned char>(*string))) //(*string))
+        {
         ++string;
+        }
 
     // Check that after the tag there is a quote
-    if (*string != '\"')
+    if (*string != '"') //'\"')
         return ParseIncludeResult::Error;
 
     // Mark the start of the include name
     ++string;
     out_include_name = string;
 
-    while (*string != '\0' && *string != '\"')
+    while (*string != '\0' && *string != '"')
         ++string;
 
-    // Check for empty include name
+    // Check empty filename
     if (out_include_name == string)
         return ParseIncludeResult::Error;
 
+    
+
     // Check for unreasonably long include names
     const size_t size = string - out_include_name;
+
     if (size > 1024)
         return ParseIncludeResult::Error;
 

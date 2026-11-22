@@ -60,6 +60,9 @@ void CUIActorMenu::InitInventoryMode()
 
 void CUIActorMenu::DeInitInventoryMode()
 {
+    CancelInventoryBuild();
+
+    // Решта існуючого коду
     ShowIfExist(m_pInventoryWnd, false);
     ShowIfExist(m_pLists[eTrashList], false);
     ShowIfExist(m_clock_value, false);
@@ -253,6 +256,11 @@ bool CUIActorMenu::RemoveItemFromList(CUIDragDropListEx* lst, PIItem pItem)
 
 void CUIActorMenu::OnInventoryAction(PIItem pItem, u16 action_type)
 {
+    if (m_inventoryBuildActive &&
+    m_currMenuMode == mmInventory)
+{
+    m_inventoryBuildDirty = true;
+}
     CUIDragDropListEx* all_lists[] =
     {
         m_pLists[eInventoryBeltList], m_pLists[eInventoryKnifeList], m_pLists[eInventoryPistolList], m_pLists[eInventoryAutomaticList],
@@ -424,7 +432,263 @@ void CUIActorMenu::InitCellForSlot(u16 slot_idx)
     //	helmet->ReloadBonesProtection();
 }
 
+
+void CUIActorMenu::EnableInventoryBuildInput(bool enabled)
+{
+    const eActorMenuListType lists[] =
+    {
+        eInventoryBagList,
+        eInventoryBeltList,
+        eInventoryKnifeList,
+        eInventoryPistolList,
+        eInventoryAutomaticList,
+        eInventoryOutfitList,
+        eInventoryHelmetList,
+        eInventoryDetectorList,
+        eInventoryBackpackList
+    };
+
+    for (const auto type : lists)
+    {
+        auto* list = m_pLists[type];
+
+        if (list && list->IsShown())
+            list->Enable(enabled);
+    }
+
+    if (m_pQuickSlot && m_pQuickSlot->IsShown())
+        m_pQuickSlot->Enable(enabled);
+}
+
+void CUIActorMenu::StartInventoryBuild(
+    CUIDragDropListEx* bagList)
+{
+    m_pendingInventoryCells.clear();
+    m_nextInventoryCell = 0;
+    m_inventoryBuildDirty = false;
+
+    auto& inv = m_pActorInvOwner->inventory();
+
+    // 1. Рюкзак
+    TIItemContainer ruck = inv.m_ruck;
+
+    std::sort(
+        ruck.begin(),
+        ruck.end(),
+        InventoryUtilities::GreaterRoomInRuck
+    );
+
+    for (PIItem item : ruck)
+    {
+        if (smart_cast<CMPPlayersBag*>(&item->object()))
+            continue;
+
+        m_pendingInventoryCells.push_back(
+            {item, bagList, 0, false}
+        );
+    }
+
+    // 2. Слоти
+    const auto addSlot = [&](u16 slot)
+    {
+        if (inv.ItemFromSlot(slot) && GetSlotList(slot))
+        {
+            m_pendingInventoryCells.push_back(
+                {nullptr, nullptr, slot, true}
+            );
+        }
+    };
+
+    addSlot(INV_SLOT_2);
+    addSlot(INV_SLOT_3);
+    addSlot(OUTFIT_SLOT);
+    addSlot(DETECTOR_SLOT);
+    addSlot(GRENADE_SLOT);
+    addSlot(HELMET_SLOT);
+    addSlot(BACKPACK_SLOT);
+
+    if (!inv.SlotIsPersistent(KNIFE_SLOT))
+        addSlot(KNIFE_SLOT);
+
+    if (!inv.SlotIsPersistent(BINOCULAR_SLOT))
+        addSlot(BINOCULAR_SLOT);
+
+    if (!inv.SlotIsPersistent(ARTEFACT_SLOT))
+        addSlot(ARTEFACT_SLOT);
+
+    if (!inv.SlotIsPersistent(PDA_SLOT))
+        addSlot(PDA_SLOT);
+
+    // Зберігаємо поведінку оригіналу:
+    // TORCH_SLOT тут не додається.
+
+    for (u32 i = SLOTS_COUNT; i <= inv.LastSlot(); ++i)
+    {
+        const u16 slot = static_cast<u16>(i);
+
+        if (!inv.SlotIsPersistent(slot))
+            addSlot(slot);
+    }
+
+    // 3. Пояс
+    for (PIItem item : inv.m_belt)
+    {
+        m_pendingInventoryCells.push_back(
+            {item, m_pLists[eInventoryBeltList], 0, false}
+        );
+    }
+
+    m_inventoryBuildModifyFrame = inv.ModifyFrame();
+    m_inventoryBuildActive = true;
+
+    EnableInventoryBuildInput(false);
+
+    // Перші 5 комірок створюємо відразу.
+    ProcessInventoryBuild();
+}
+
+void CUIActorMenu::ProcessInventoryBuild()
+{
+    if (!m_inventoryBuildActive)
+        return;
+
+    if (m_currMenuMode != mmInventory || !IsShown())
+        return;
+
+    auto& inv = m_pActorInvOwner->inventory();
+
+    // Якщо інвентар змінився, стару чергу
+    // більше не можна використовувати.
+    if (m_inventoryBuildDirty ||
+        inv.ModifyFrame() != m_inventoryBuildModifyFrame)
+    {
+        InitInventoryContents(m_pLists[eInventoryBagList]);
+        return;
+    }
+
+    constexpr u32 FRAME_INTERVAL = 1;
+    constexpr size_t CELLS_PER_BATCH = 7;
+
+    // Не обробляємо чергу двічі в одному кадрі.
+    // FRAME_INTERVAL = 2: кадри 1, 3, 5...
+    if (m_lastInventoryBuildFrame != u32(-1) &&
+        Device.dwFrame - m_lastInventoryBuildFrame < FRAME_INTERVAL)
+    {
+        return;
+    }
+
+    m_lastInventoryBuildFrame = Device.dwFrame;
+
+    size_t created = 0;
+
+    while (created < CELLS_PER_BATCH &&
+           m_nextInventoryCell < m_pendingInventoryCells.size())
+    {
+        const PendingInventoryCell request =
+            m_pendingInventoryCells[m_nextInventoryCell++];
+
+        if (request.fromSlot)
+        {
+            if (!inv.ItemFromSlot(request.slot) ||
+                !GetSlotList(request.slot))
+            {
+                continue;
+            }
+
+            InitCellForSlot(request.slot);
+        }
+        else
+        {
+            if (!request.item || !request.list)
+                continue;
+
+            CUICellItem* cell = create_cell_item(request.item);
+
+            if (!cell)
+                continue;
+
+            request.list->SetItem(cell);
+        }
+
+        ++created;
+    }
+
+    // Усі комірки створено.
+    if (m_nextInventoryCell >= m_pendingInventoryCells.size())
+    {
+        m_pendingInventoryCells.clear();
+        m_nextInventoryCell = 0;
+
+        m_inventoryBuildActive = false;
+        m_inventoryBuildDirty = false;
+
+        EnableInventoryBuildInput(true);
+
+        if (m_pQuickSlot)
+            m_pQuickSlot->ReloadReferences(m_pActorInvOwner);
+    }
+}
+
+void CUIActorMenu::CancelInventoryBuild()
+{
+    if (m_inventoryBuildActive)
+        EnableInventoryBuildInput(true);
+
+    m_inventoryBuildActive = false;
+    m_inventoryBuildDirty = false;
+
+    m_pendingInventoryCells.clear();
+    m_nextInventoryCell = 0;
+}
+
 void CUIActorMenu::InitInventoryContents(CUIDragDropListEx* pBagList, bool onlyBagList /*= false*/)
+{
+    // Скасувати попередню незавершену побудову
+    CancelInventoryBuild();
+
+    ClearAllLists();
+    m_pMouseCapturer = NULL;
+    m_UIPropertiesBox->Hide();
+    SetCurrentItem(NULL);
+
+    // Поступове створення по 5 комірок через кадр
+    // тільки для звичайного режиму інвентарю
+    if (m_currMenuMode == mmInventory && !onlyBagList)
+    {
+        StartInventoryBuild(pBagList);
+        return;
+    }
+
+    // Стара синхронна логіка для інших режимів
+    CUIDragDropListEx* curr_list = pBagList;
+
+    TIItemContainer ruck_list;
+    if (onlyBagList)
+        m_pActorInvOwner->inventory().AddAvailableItems(ruck_list, true);
+    else
+        ruck_list = m_pActorInvOwner->inventory().m_ruck;
+
+    std::sort(ruck_list.begin(), ruck_list.end(), InventoryUtilities::GreaterRoomInRuck);
+
+    for (PIItem item : ruck_list)
+    {
+        CMPPlayersBag* bag = smart_cast<CMPPlayersBag*>(&item->object());
+        if (bag)
+            continue;
+
+        CUICellItem* itm = create_cell_item(item);
+        curr_list->SetItem(itm);
+
+        if (m_currMenuMode == mmTrade && m_pPartnerInvOwner)
+            ColorizeItem(itm, !CanMoveToPartner(item));
+    }
+
+    if (onlyBagList)
+        return;
+    
+//    */)
+/*
+void CUIActorMenu::InitInventoryContents(CUIDragDropListEx* pBagList, bool onlyBagList /*= false*)  
 {
     ClearAllLists();
     m_pMouseCapturer = NULL;
@@ -450,8 +714,8 @@ void CUIActorMenu::InitInventoryContents(CUIDragDropListEx* pBagList, bool onlyB
         CUICellItem* itm = create_cell_item(item);
         curr_list->SetItem(itm);
         if (m_currMenuMode == mmTrade && m_pPartnerInvOwner)
-            ColorizeItem(itm, !CanMoveToPartner(item));
-
+            ColorizeItem(itm, !CanMoveToPartner(item));*/
+        /*
         // CCustomOutfit* outfit = smart_cast<CCustomOutfit*>(item);
         // if(outfit)
         //	outfit->ReloadBonesProtection();
@@ -459,10 +723,10 @@ void CUIActorMenu::InitInventoryContents(CUIDragDropListEx* pBagList, bool onlyB
         // CHelmet* helmet = smart_cast<CHelmet*>(item);
         // if(helmet)
         //	helmet->ReloadBonesProtection();
-    }
+    }*/
 
-    if (onlyBagList)
-        return;
+    /*if (onlyBagList)
+        return;*/
 
     // Slots
     InitCellForSlot(INV_SLOT_2);

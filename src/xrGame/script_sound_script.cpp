@@ -10,6 +10,23 @@
 
 #include "script_sound.h"
 #include "script_game_object.h"
+#include "xrSound/SoundCatalog.h"
+
+namespace
+{
+luabind::object SoundCatalogLuaPaths(lua_State* state, pcstr prefix, pcstr path)
+{
+    xr_vector<shared_str> names;
+    if (!SoundCatalogCollectLuaPaths(prefix, path, names))
+        return luabind::object(); // nil: retain old-script/early-loading fallback.
+    luabind::object result = luabind::newtable(state);
+    for (size_t i = 0; i < names.size(); ++i)
+        result[i + 1] = names[i].c_str();
+    return result;
+}
+}
+
+
 
 void CScriptSound::script_register(lua_State* luaState)
 {
@@ -17,6 +34,8 @@ void CScriptSound::script_register(lua_State* luaState)
 
     module(luaState)
     [
+        def("sound_catalog_paths", &SoundCatalogLuaPaths),
+
         class_<CSound_params>("sound_params")
             .def_readwrite("position", &CSound_params::position)
             .def_readwrite("volume", &CSound_params::volume)

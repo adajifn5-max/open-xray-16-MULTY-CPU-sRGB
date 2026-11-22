@@ -1,4 +1,5 @@
 #include "pch_script.h"
+#include "xrCore/StutterProfile.h"
 #include "xrServer_Objects_ALife_All.h"
 #include "Level.h"
 #include "game_cl_base.h"
@@ -10,18 +11,37 @@
 #include "xrEngine/xr_object.h"
 #include "xrEngine/IGame_Persistent.h"
 #include "xrNetServer/NET_Messages.h"
+#include "sound_collection_storage.h"
 
 void CLevel::cl_Process_Spawn(NET_Packet& P)
 {
+    XR_STUTTER_DISABLED_SCOPE(Spawn, "CLevel::cl_Process_Spawn");
     // Begin analysis
     shared_str s_name;
     P.r_stringZ(s_name);
+#if XRAY_ENABLE_STUTTER_TIMERS
+    StutterProfile::Scope packetScope;
+    if (StutterProfile::Enabled(StutterProfile::Category::Spawn))
+    {
+        packetScope.Begin(StutterProfile::Category::Spawn, "spawn.packet", s_name.c_str());
+        packetScope.AsPoint(); // Keep short item packets too: their sum can fill a long gap between NPCs.
+    }
+#endif
 
     // Create DC (xrSE)
-    CSE_Abstract* E = F_entity_Create(s_name.c_str());
+    CSE_Abstract* E = [&]()
+    {
+        XR_STUTTER_SCOPE(Spawn, "spawn.entity_create", s_name.c_str());
+        return F_entity_Create(s_name.c_str());
+    }();
     R_ASSERT2(E, s_name.c_str());
 
-    E->Spawn_Read(P);
+    {
+        XR_STUTTER_SCOPE(Spawn, "spawn.packet_read", s_name.c_str());
+        E->Spawn_Read(P);
+    }
+    XR_STUTTER_NPC_CONTEXT(smart_cast<CSE_ALifeMonsterAbstract*>(E) != nullptr);
+    XR_STUTTER_NPC_SCOPE(Spawn, "NPC::cl_spawn_dispatch", E->s_name.c_str(), E->ID);
     if (E->s_flags.is(M_SPAWN_UPDATE))
         E->UPDATE_Read(P);
 
@@ -45,7 +65,10 @@ void CLevel::cl_Process_Spawn(NET_Packet& P)
     /*/
     g_sv_Spawn(E);
 
-    F_entity_Destroy(E);
+    {
+        XR_STUTTER_SCOPE(Spawn, "spawn.entity_destroy", s_name.c_str(), E->ID);
+        F_entity_Destroy(E);
+    }
     //*/
 };
 
@@ -86,6 +109,8 @@ extern float debug_on_frame_gather_stats_frequency;
 
 void CLevel::g_sv_Spawn(CSE_Abstract* E)
 {
+    XR_STUTTER_NPC_CONTEXT(smart_cast<CSE_ALifeMonsterAbstract*>(E) != nullptr);
+    XR_STUTTER_SCOPE(Spawn, "CLevel::g_sv_Spawn", E->s_name.c_str(), E->ID, E->ID_Parent);
     ZoneScoped;
 
 //	CTimer		T(false);
@@ -102,11 +127,32 @@ void CLevel::g_sv_Spawn(CSE_Abstract* E)
 
     // Client spawn
     //	T.Start		();
-    IGameObject* O = Objects.Create(E->s_name.c_str());
+    if (g_sound_collection_storage)
+{
+    g_sound_collection_storage->notify_object_spawn(Device.dwFrame);
+}
+
+
+
+    IGameObject* O = [&]()
+    {
+        XR_STUTTER_SCOPE(Spawn, "Objects.Create/Load", E->s_name.c_str(), E->ID, E->ID_Parent);
+        return Objects.Create(E->s_name.c_str());
+    }();
+
+    // Повідомляємо про початок створення об'єкта
+
+
+
 // Msg				("--spawn--CREATE: %f ms",1000.f*T.GetAsync());
 
 //	T.Start		();
-    if (0 == O || (!O->net_Spawn(E)))
+    const auto spawnObject = [&]()
+    {
+        XR_STUTTER_SCOPE(Spawn, "IGameObject::net_Spawn", E->s_name.c_str(), E->ID, E->ID_Parent);
+        return O->net_Spawn(E);
+    };
+    if (0 == O || (!spawnObject()))
     {
         O->net_Destroy();
         if (!GEnv.isDedicatedServer)
@@ -117,7 +163,10 @@ void CLevel::g_sv_Spawn(CSE_Abstract* E)
     else
     {
         if (!GEnv.isDedicatedServer)
+        {
+            XR_STUTTER_SCOPE(Phase, "spawn.callbacks", E->s_name.c_str(), E->ID);
             client_spawn_manager().callback(O);
+        }
         // Msg			("--spawn--SPAWN: %f ms",1000.f*T.GetAsync());
 
         if ((E->s_flags.is(M_SPAWN_OBJECT_LOCAL)) && (E->s_flags.is(M_SPAWN_OBJECT_ASPLAYER)))
@@ -146,6 +195,7 @@ void CLevel::g_sv_Spawn(CSE_Abstract* E)
 
         if (0xffff != E->ID_Parent)
         {
+            XR_STUTTER_SCOPE(Phase, "spawn.ownership", E->s_name.c_str(), E->ID, E->ID_Parent);
             /*
             // Generate ownership-event
             NET_Packet			GEN;
@@ -177,7 +227,10 @@ void CLevel::g_sv_Spawn(CSE_Abstract* E)
 		}*/ //:(
 
     //---------------------------------------------------------
-    Game().OnSpawn(O);
+    {
+        XR_STUTTER_SCOPE(Phase, "spawn.game_on_spawn", E->s_name.c_str(), E->ID);
+        Game().OnSpawn(O);
+    }
 }
 
 CSE_Abstract* CLevel::spawn_item(

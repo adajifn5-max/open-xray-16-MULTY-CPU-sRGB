@@ -2,6 +2,9 @@
 #pragma hdrstop
 
 #include "xrRender_console.h"
+#if RENDER == R_R4
+#include "FoliageLod.h"
+#endif
 #include "xrCore/xr_token.h"
 #include "xrCore/Animation/SkeletonMotions.hpp"
 
@@ -189,6 +192,9 @@ Flags32 ps_r2_ls_flags_ext = {
 
 float ps_r2_df_parallax_h = 0.02f;
 float ps_r2_df_parallax_range = 75.f;
+u32 ps_r4_color_space = 0;
+const xr_token qcolor_space_token[] = { { "legacy", 0 }, { "linear", 1 }, { nullptr, 0 } };
+
 float ps_r2_tonemap_middlegray = 1.f; // r2-only
 float ps_r2_tonemap_adaptation = 1.f; // r2-only
 float ps_r2_tonemap_low_lum = 0.0001f; // r2-only
@@ -753,6 +759,10 @@ void xrRender_initconsole()
     CMD4(CCC_Integer, "r__supersample", &ps_r__Supersample, 1, 8);
 
     CMD4(CCC_Float, "r__geometry_lod", &ps_r__LOD, 0.1f, 2.f);
+#if RENDER == R_R4
+    // CCC_Float supplies range validation, status and normal user.ltx saving.
+    CMD4(CCC_Float, "r4_foliage_far_distance", &foliage_lod::farDistance, 50.f, 150.f);
+#endif
     //CMD4(CCC_Float, "r__geometry_lod_pow", &ps_r__LOD_Power, 0, 2);
 
     CMD4(CCC_Float, "r__detail_density", &ps_current_detail_density/*&ps_r__Detail_density*/, 0.1f, 0.99f);
@@ -924,6 +934,7 @@ void xrRender_initconsole()
     CMD3(CCC_Mask, "r2_ssao_half_data", &ps_r2_ls_flags_ext, R2FLAGEXT_SSAO_HALF_DATA); // Need restart
     CMD3(CCC_Mask, "r2_ssao_hbao", &ps_r2_ls_flags_ext, R2FLAGEXT_SSAO_HBAO); // Need restart
     CMD3(CCC_Mask, "r2_ssao_hdao", &ps_r2_ls_flags_ext, R2FLAGEXT_SSAO_HDAO); // Need restart
+    CMD3(CCC_Token, "r4_color_space", &ps_r4_color_space, qcolor_space_token); // Restart game
     CMD3(CCC_Mask, "r4_enable_tessellation", &ps_r2_ls_flags_ext, R2FLAGEXT_ENABLE_TESSELLATION); // Need restart
     CMD3(CCC_Mask, "r4_wireframe", &ps_r2_ls_flags_ext, R2FLAGEXT_WIREFRAME); // Need restart
     CMD3(CCC_Mask, "r2_steep_parallax", &ps_r2_ls_flags, R2FLAG_STEEP_PARALLAX);

@@ -1,4 +1,5 @@
 #include "pch_script.h"
+#include "xrCore/StutterProfile.h"
 #include "map_manager.h"
 #include "alife_registry_wrappers.h"
 #include "InventoryOwner.h"
@@ -237,6 +238,7 @@ void CMapManager::GetMapLocations(const shared_str& spot_type, u16 id, xr_vector
 
 void CMapManager::Update()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CMapManager::Update");
     ZoneScoped;
     delete_data(m_deffered_destroy_queue); // from prev frame
 

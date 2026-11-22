@@ -18,6 +18,29 @@
 #include "alife_schedule_registry.h"
 #include "xrServerEntities/xrMessages.h"
 
+
+#ifdef DEBUG
+static u64 g_online_impl_calls = 0;
+static u64 g_online_impl_children = 0;
+static u64 g_online_impl_inventory_items = 0;
+
+static u64 g_online_impl_destroy_calls = 0;
+static u64 g_online_impl_destroy_ticks = 0;
+static u64 g_online_impl_destroy_max_ticks = 0;
+
+static u64 g_online_impl_spawn_calls = 0;
+static u64 g_online_impl_spawn_ticks = 0;
+static u64 g_online_impl_spawn_max_ticks = 0;
+
+static u64 g_online_impl_total_ticks = 0;
+static u64 g_online_impl_total_max_ticks = 0;
+
+static u64 g_online_impl_other_ticks = 0;
+static u64 g_online_impl_other_max_ticks = 0;
+
+static u64 g_online_impl_qpc_frequency = 0;
+#endif
+
 #ifdef DEBUG
 extern Flags32 psAI_Flags;
 #endif
@@ -154,7 +177,159 @@ void CSE_ALifeDynamicObject::detach(
 
 void add_online_impl(CSE_ALifeDynamicObject* object, const bool& update_registries)
 {
+
+    #ifdef DEBUG
+    LARGE_INTEGER qpc_total_start;
+    LARGE_INTEGER qpc_start;
+    LARGE_INTEGER qpc_end;
+
+    if (!g_online_impl_qpc_frequency)
+    {
+        LARGE_INTEGER frequency;
+        QueryPerformanceFrequency(&frequency);
+        g_online_impl_qpc_frequency = static_cast<u64>(frequency.QuadPart);
+    }
+
+    QueryPerformanceCounter(&qpc_total_start);
+    ++g_online_impl_calls;
+
+    u64 local_destroy_ticks = 0;
+    u64 local_spawn_ticks = 0;
+#endif
+
     NET_Packet tNetPacket;
+    ClientID clientID;
+    clientID.set(
+        object->alife().server().GetServerClient()
+            ? object->alife().server().GetServerClient()->ID.value()
+            : 0);
+
+    for (auto& it : object->children)
+    {
+#ifdef DEBUG
+        ++g_online_impl_children;
+#endif
+
+        //Alundaio:
+        if (it == ai().alife().graph().actor()->ID)
+            continue;
+        //-Alundaio
+
+        CSE_ALifeDynamicObject* l_tpALifeDynamicObject =
+            ai().alife().objects().object(it);
+
+        if (!l_tpALifeDynamicObject)
+            continue;
+
+        CSE_ALifeInventoryItem* l_tpALifeInventoryItem =
+            smart_cast<CSE_ALifeInventoryItem*>(l_tpALifeDynamicObject);
+
+        if (!l_tpALifeInventoryItem)
+            continue;
+
+#ifdef DEBUG
+        ++g_online_impl_inventory_items;
+#endif
+
+        l_tpALifeInventoryItem->base()->s_flags._or(M_SPAWN_UPDATE);
+
+        CSE_Abstract* l_tpAbstract =
+            smart_cast<CSE_Abstract*>(l_tpALifeInventoryItem);
+
+#ifdef DEBUG
+        QueryPerformanceCounter(&qpc_start);
+#endif
+
+        object->alife().server().entity_Destroy(l_tpAbstract);
+
+#ifdef DEBUG
+        QueryPerformanceCounter(&qpc_end);
+
+        const u64 destroy_ticks =
+            static_cast<u64>(qpc_end.QuadPart - qpc_start.QuadPart);
+
+        local_destroy_ticks += destroy_ticks;
+        g_online_impl_destroy_ticks += destroy_ticks;
+        ++g_online_impl_destroy_calls;
+
+        if (destroy_ticks > g_online_impl_destroy_max_ticks)
+            g_online_impl_destroy_max_ticks = destroy_ticks;
+#endif
+
+#ifdef DEBUG
+        //		if (psAI_Flags.test(aiALife))
+        //			Msg("[LSS] Spawning item ...");
+
+        Msg("[LSS][%d] Going online [%d][%s][%d] with parent [%d][%s] on '%s'",
+            Device.dwFrame,
+            Device.dwTimeGlobal,
+            l_tpALifeInventoryItem->base()->name_replace(),
+            l_tpALifeInventoryItem->base()->ID,
+            object->ID,
+            object->name_replace(),
+            "*SERVER*");
+#endif
+
+        l_tpALifeDynamicObject->o_Position = object->o_Position;
+        l_tpALifeDynamicObject->m_tNodeID = object->m_tNodeID;
+
+#ifdef DEBUG
+        QueryPerformanceCounter(&qpc_start);
+#endif
+
+        object->alife().server().Process_spawn(
+            tNetPacket,
+            clientID,
+            FALSE,
+            l_tpALifeInventoryItem->base());
+
+#ifdef DEBUG
+        QueryPerformanceCounter(&qpc_end);
+
+        const u64 spawn_ticks =
+            static_cast<u64>(qpc_end.QuadPart - qpc_start.QuadPart);
+
+        local_spawn_ticks += spawn_ticks;
+        g_online_impl_spawn_ticks += spawn_ticks;
+        ++g_online_impl_spawn_calls;
+
+        if (spawn_ticks > g_online_impl_spawn_max_ticks)
+            g_online_impl_spawn_max_ticks = spawn_ticks;
+#endif
+
+        l_tpALifeDynamicObject->s_flags._and(u16(-1) ^ M_SPAWN_UPDATE);
+        l_tpALifeDynamicObject->m_bOnline = true;
+    }
+
+    if (update_registries)
+    {
+        object->alife().scheduled().remove(object);
+        object->alife().graph().remove(object, object->m_tGraphID, false);
+    }
+
+#ifdef DEBUG
+    LARGE_INTEGER qpc_total_end;
+    QueryPerformanceCounter(&qpc_total_end);
+
+    const u64 total_ticks =
+        static_cast<u64>(qpc_total_end.QuadPart - qpc_total_start.QuadPart);
+
+    const u64 other_ticks =
+        total_ticks > local_destroy_ticks + local_spawn_ticks
+            ? total_ticks - local_destroy_ticks - local_spawn_ticks
+            : 0;
+
+    g_online_impl_total_ticks += total_ticks;
+    g_online_impl_other_ticks += other_ticks;
+
+    if (total_ticks > g_online_impl_total_max_ticks)
+        g_online_impl_total_max_ticks = total_ticks;
+
+    if (other_ticks > g_online_impl_other_max_ticks)
+        g_online_impl_other_max_ticks = other_ticks;
+#endif
+
+    /*NET_Packet tNetPacket;
     ClientID clientID;
     clientID.set(
         object->alife().server().GetServerClient() ? object->alife().server().GetServerClient()->ID.value() : 0);
@@ -202,7 +377,7 @@ void add_online_impl(CSE_ALifeDynamicObject* object, const bool& update_registri
         return;
 
     object->alife().scheduled().remove(object);
-    object->alife().graph().remove(object, object->m_tGraphID, false);
+    object->alife().graph().remove(object, object->m_tGraphID, false);*/
 }
 
 void CSE_ALifeTraderAbstract::add_online(const bool& update_registries)

@@ -324,6 +324,7 @@ luabind::class_<CScriptGameObject>& script_register_game_object1(luabind::class_
         .def("get_movement_speed", &CScriptGameObject::GetMovementSpeed)
 
         .def("set_npc_position", &CScriptGameObject::SetNpcPosition)
+        .def("set_npc_position_from_spawn", &CScriptGameObject::SetNpcPositionFromSpawn)
 
         .def("vertex_in_direction", &CScriptGameObject::vertex_in_direction)
 

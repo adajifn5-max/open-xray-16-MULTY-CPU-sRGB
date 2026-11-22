@@ -26,9 +26,9 @@
       <PreprocessorDefinitions>_USRDLL;XRCORE_EXPORTS;CI=$(CI);APPVEYOR=$(APPVEYOR);APPVEYOR_BUILD_ID="$(APPVEYOR_BUILD_ID)";APPVEYOR_BUILD_VERSION="$(APPVEYOR_BUILD_VERSION)";APPVEYOR_ACCOUNT_NAME="$(APPVEYOR_ACCOUNT_NAME)";GITHUB_ACTIONS=$(GITHUB_ACTIONS);GITHUB_RUN_ID="$(GITHUB_RUN_ID)";GITHUB_RUN_NUMBER="$(GITHUB_RUN_NUMBER)";GITHUB_REPOSITORY="$(GITHUB_REPOSITORY)";OPENSSL_NO_DEPRECATED;TRACY_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>BugTrap.lib;FaultRep.lib;lzo.lib;jpeg-static.lib;libcrypto.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalDependencies Condition="!$(Configuration.Contains('Debug'))">mimalloc-static.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalDependencies Condition="$(Configuration.Contains('Debug'))">mimalloc-static-debug.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>BugTrap.lib;FaultRep.lib;lzo.lib;libcrypto.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="!$(Configuration.Contains('Debug'))">mimalloc-static.lib;E:\xray-17\xray-16\sdk\libraries\x64\Relese\jpeg-static.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="$(Configuration.Contains('Debug'))">mimalloc-static-debug.lib;E:\xray-17\xray-16\sdk\libraries\x64\Debug\jpeg-static.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Lib>
       <AdditionalDependencies>BugTrap.lib;FaultRep.lib;lzo.lib;jpeg-static.lib;libcrypto.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -81,6 +81,7 @@ call .GitInfo.cmd</Command>
     <ClCompile Include="FMesh.cpp" />
     <ClCompile Include="FS.cpp" />
     <ClCompile Include="FTimer.cpp" />
+    <ClCompile Include="StutterProfile.cpp" />
     <ClCompile Include="LocatorAPI.cpp" />
     <ClCompile Include="LocatorAPI_auth.cpp" />
     <ClCompile Include="LocatorAPI_defs.cpp" />
@@ -197,6 +198,8 @@ call .GitInfo.cmd</Command>
     <ClInclude Include="PostProcess\PostProcess.hpp" />
     <ClInclude Include="PostProcess\PPInfo.hpp" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="SoundProfileLite.h" />
+    <ClInclude Include="StutterProfile.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="stream_reader.h" />
     <ClInclude Include="stream_reader_inline.h" />

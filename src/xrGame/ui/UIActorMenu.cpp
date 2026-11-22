@@ -219,6 +219,7 @@ void CUIActorMenu::Update()
     case mmUndefined: break;
     case mmInventory:
     {
+        ProcessInventoryBuild();
         if (m_clock_value)
         {
             m_clock_value->SetText(InventoryUtilities::GetGameTimeAsString(

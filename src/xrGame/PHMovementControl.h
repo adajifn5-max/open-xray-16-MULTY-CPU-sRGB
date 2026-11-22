@@ -110,6 +110,7 @@ private:
     EEnvironment eEnvironment;
     Fbox aabb;
     Fbox boxes[4];
+    bool ValidBoxId(u32 id) const { return id < sizeof(boxes) / sizeof(boxes[0]); }
 
     u32 trying_times[4];
     Fvector trying_poses[4];
@@ -209,6 +210,11 @@ public:
     void CollisionEnable(BOOL enable);
     void SetBox(u32 id, const Fbox& BB)
     {
+        if (!ValidBoxId(id))
+        {
+            Msg("! [physics.box] rejected SetBox index=%u count=4", id);
+            return;
+        }
         boxes[id].set(BB);
         aabb.set(BB);
     }

@@ -92,7 +92,7 @@ void FTreeVisual::Load(const char* N, IReader* data, u32 dwFlags)
     }*/
 
     // Geom
-    rm_geom.create(vFormat, *p_rm_Vertices, *p_rm_Indices);
+    rm_geom.create(vFormat, *p_rm_Vertices, *p_rm_Indices, p_rm_Indices->IndexStride());
 
     // Get constants
     m_xform = "m_xform";

@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #include "Layers/xrRender/BufferUtils.h"
 
 #include <FlexibleVertexFormat.h>
@@ -23,6 +24,7 @@ u32 GetDeclLength(const VertexElement* decl)
 static HRESULT CreateBuffer(ID3DBuffer** ppBuffer, const void* pData, u32 dataSize,
     bool bDynamic, D3D_BIND_FLAG bufferType)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.gpu_buffer", "", dataSize, bufferType);
     D3D_BUFFER_DESC desc;
     desc.ByteWidth      = dataSize;
     desc.Usage          = bDynamic ? D3D_USAGE_DYNAMIC : D3D_USAGE_DEFAULT;
@@ -263,8 +265,10 @@ IndexStagingBuffer::~IndexStagingBuffer()
     Destroy();
 }
 
-void IndexStagingBuffer::Create(size_t size, bool allowReadBack /*= false*/, bool /*managed = true*/)
+void IndexStagingBuffer::Create(size_t size, bool allowReadBack /*= false*/, bool /*managed = true*/, u32 indexStride)
 {
+    R_ASSERT(indexStride == sizeof(u16) || indexStride == sizeof(u32));
+    m_IndexStride = indexStride;
     m_Size = size;
     m_AllowReadBack = allowReadBack;
 

@@ -12,6 +12,7 @@
 #include "alife_surge_manager.h"
 #include "alife_storage_manager.h"
 #include "xrEngine/ISheduled.h"
+#include "xrEngine/pure.h"
 
 namespace RestrictionSpace
 {
@@ -21,10 +22,14 @@ enum ERestrictorTypes : u32;
 class CALifeUpdateManager : public CALifeSwitchManager,
                             public CALifeSurgeManager,
                             public CALifeStorageManager,
-                            public ScheduledBase
+                            public ScheduledBase,
+                            public pureFrame
 {
 private:
     bool m_first_time;
+    u32 m_alife_update_frame = u32(-1);
+    u32 m_scheduled_slice_frame = u32(-1);
+    void process_scheduled_slice(bool init_ef);
 
 protected:
     u64 m_max_process_time;
@@ -34,6 +39,8 @@ protected:
 
 public:
     void update();
+    void OnFrame() override;
+    void continue_scheduled();
 
 protected:
     void new_game(LPCSTR save_name);

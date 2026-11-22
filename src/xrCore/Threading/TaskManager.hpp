@@ -15,11 +15,14 @@
 */
 #pragma once
 
+#include "Common/Platform.hpp" // Establish identical platform guards in every translation unit.
 #include "Task.hpp"
 #include "Event.hpp"
 
 #include <atomic>
 #include <mutex>
+#include <thread>
+#include <condition_variable>
 
 class TaskWorker;
 
@@ -29,10 +32,30 @@ private:
     xr_vector<TaskWorker*> workers;
     xr_vector<std::thread> workerThreads;
     std::mutex workersLock;
+    std::condition_variable workerStateChanged;
+    size_t finishedWorkers{}; // Protected by workersLock; shutdown barrier only.
+    bool threadsSpawned{};   // Protected by workersLock.
+    size_t workerThreadCount{};
+    std::atomic_bool workersReady{};
+
+#if defined(XR_PLATFORM_WINDOWS)
+    struct ThreadAffinity
+    {
+        size_t mask;
+        unsigned short group;
+    };
+    Event stopRequested; // Manual-reset on Windows; wakes all sleeping/paused workers.
+    ThreadAffinity mainThreadAffinity{};
+    xr_vector<ThreadAffinity> workerAffinities;
+
+    void InitializeThreadAffinity();
+#endif
 
     inline static Event newWorkArrived;
     std::atomic_size_t activeWorkersCount{};
 
+    // Nested Main Wait calls keep workers servicing queues even while paused.
+    mutable std::atomic_size_t mainWaitRequests{};
     std::atomic_bool shouldPause{};
     std::atomic_bool shouldStop{};
 

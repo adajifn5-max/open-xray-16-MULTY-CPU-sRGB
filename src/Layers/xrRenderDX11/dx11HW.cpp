@@ -1,5 +1,4 @@
 #include "stdafx.h"
-
 #include "dx11HW.h"
 
 #include "StateManager/dx11SamplerStateCache.h"
@@ -8,6 +7,7 @@
 #include <dxgidebug.h>
 
 #include <SDL_syswm.h>
+
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -99,10 +99,7 @@ void CHW::DestroyD3D()
     // To make it work with DXVK, etc.
     hD3D->Close();
     hDXGI->Close();
-    if (auto hModule = GetModuleHandleA("d3d11.dll"))
-        FreeLibrary(hModule);
-    if (auto hModule = GetModuleHandleA("dxgi.dll"))
-        FreeLibrary(hModule);
+    // GetModuleHandle returns borrowed handles: never release another owner's reference.
 }
 
 void CHW::CreateDevice(SDL_Window* sdlWnd)
@@ -127,11 +124,18 @@ void CHW::CreateDevice(SDL_Window* sdlWnd)
 
     u32 createDeviceFlags = 0;
 
-#ifdef DEBUG
+/*#ifdef DEBUG
     if (xrDebug::DebuggerIsPresent())
         createDeviceFlags |= D3D_CREATE_DEVICE_DEBUG;
+#endif*/
+    #if 0 // DX11 DEBUG LAYER DISABLED
+    // D3D11 Debug Layer: вмикається параметром -dx11debug
+if (strstr(Core.Params, "-dx11debug") != nullptr)
+{
+    createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+    Msg("[DX11_DEBUG] Debug Layer requested");
+}
 #endif
-
     HRESULT R;
 
     D3D_FEATURE_LEVEL featureLevels[] =
@@ -182,6 +186,13 @@ void CHW::CreateDevice(SDL_Window* sdlWnd)
 
     if (SUCCEEDED(R))
     {
+        #if 0 // DX11 DEBUG STATUS DISABLED
+        const UINT flags = pDevice->GetCreationFlags();
+
+Msg("[DX11_DEBUG] active=%u flags=0x%08X",
+    (flags & D3D11_CREATE_DEVICE_DEBUG) ? 1u : 0u,
+    static_cast<unsigned>(flags));
+#endif
         pContext->QueryInterface(__uuidof(ID3D11DeviceContext1), reinterpret_cast<void**>(&pContext1));
 #ifdef HAS_DX11_3
         pDevice->QueryInterface(__uuidof(ID3D11Device3), reinterpret_cast<void**>(&pDevice3));
@@ -217,7 +228,21 @@ void CHW::CreateDevice(SDL_Window* sdlWnd)
         DoublePrecisionFloatShaderOps = doubles.DoublePrecisionFloatShaderOps;
         SAD4ShaderInstructions = options.SAD4ShaderInstructions;
         ExtendedDoublesShaderInstructions = options.ExtendedDoublesShaderInstructions;
+#ifdef DEBUG
+         if (ThisInstanceIsGlobal())
+        {
+    Msg("[DX11_AUDIT] DX10Only=%d FeatureLevel=0x%X ComputeShaders=%d",
+       
+    DX10Only ? 1 : 0,
+    static_cast<unsigned>(FeatureLevel),
+    ComputeShadersSupported ? 1 : 0);
     }
+#endif
+   
+    }
+
+
+
 
     if (FAILED(R))
     {
@@ -539,7 +564,6 @@ void CHW::Present()
 {
     const bool bUseVSync = psDeviceMode.WindowStyle == rsFullscreen &&
         psDeviceFlags.test(rsVSync); // xxx: weird tearing glitches when VSync turned on for windowed mode in DX11
-
     switch (m_pSwapChain->Present(bUseVSync ? 1 : 0, 0))
     {
     case DXGI_STATUS_OCCLUDED:

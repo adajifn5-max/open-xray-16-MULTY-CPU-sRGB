@@ -45,7 +45,7 @@ bool activating_character_delay::do_position_correct()
     VERIFY(e_alife->g_Alive());
 #endif
     VERIFY(obj);
-    const Fvector& sv_pos = obj->Position();
+    const Fvector sv_pos = obj->Position();
     const bool ret = char_support.CollisionCorrectObjPos();
     if (!ret)
         obj->Position().set(sv_pos);

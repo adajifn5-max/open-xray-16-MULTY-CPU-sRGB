@@ -3,6 +3,8 @@
 
 #include "R_Backend_xform.h"
 
+extern ENGINE_API float psHUD_FOV;
+
 namespace xray::render::RENDER_NAMESPACE
 {
 void R_xforms::set_W(const Fmatrix& m)
@@ -52,6 +54,28 @@ void R_xforms::set_P(const Fmatrix& m)
     cmd_list.set_xform(D3DTS_PROJECTION, m);
 }
 
+void R_xforms::set_hud_projection(bool enabled)
+{
+    m_bHUDProjection = enabled;
+    // Also update an already-bound table: world and HUD may use the same shader.
+    if (c_gbuffer_projection)
+        apply_gbuffer_projection();
+}
+
+void R_xforms::set_c_gbuffer_projection(R_constant* C)
+{
+    c_gbuffer_projection = C;
+    apply_gbuffer_projection();
+}
+
+void R_xforms::apply_gbuffer_projection()
+{
+    const float worldTan = tanf(deg2rad(Device.fFOV * 0.5f));
+    const float hudTan = tanf(deg2rad(psHUD_FOV * Device.fFOV * 0.5f));
+    const float hudScale = hudTan / worldTan;
+    cmd_list.set_c(c_gbuffer_projection, hudScale, 0.f, 0.f, m_bHUDProjection ? 1.f : 0.f);
+}
+
 void R_xforms::apply_invw()
 {
     VERIFY(c_invw);
@@ -74,6 +98,7 @@ void R_xforms::unmap()
     c_wv = nullptr;
     c_vp = nullptr;
     c_wvp = nullptr;
+    c_gbuffer_projection = nullptr;
 }
 R_xforms::R_xforms(CBackend& cmd_list_in)
     : cmd_list(cmd_list_in)
@@ -87,5 +112,6 @@ R_xforms::R_xforms(CBackend& cmd_list_in)
     m_vp.identity();
     m_wvp.identity();
     m_bInvWValid = true;
+    m_bHUDProjection = false;
 }
 } // namespace xray::render::RENDER_NAMESPACE

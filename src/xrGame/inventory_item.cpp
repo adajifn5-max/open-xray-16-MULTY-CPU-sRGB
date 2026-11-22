@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "pch_script.h"
+#include "xrCore/StutterProfile.h"
 #include "inventory_item.h"
 #include "inventory_item_impl.h"
 #include "Inventory.h"
@@ -83,6 +84,7 @@ CInventoryItem::~CInventoryItem()
 
 void CInventoryItem::Load(LPCSTR section)
 {
+    XR_STUTTER_DISABLED_SCOPE(Spawn, "CInventoryItem::Load", section);
     CHitImmunity::LoadImmunities(pSettings->r_string(section, "immunities_sect"), pSettings);
 
     ISpatial* self = smart_cast<ISpatial*>(this);

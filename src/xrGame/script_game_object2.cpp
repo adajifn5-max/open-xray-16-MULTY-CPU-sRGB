@@ -7,6 +7,8 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "pch_script.h"
+#include "xrCore/StutterProfile.h"
+#include <cstdio>
 #include "script_game_object.h"
 #include "script_game_object_impl.h"
 #include "ai_space.h"
@@ -361,9 +363,102 @@ void CScriptGameObject::SetActorPosition(Fvector pos)
             LuaMessageType::Error, "ScriptGameObject : attempt to call SetActorPosition method for non-actor object");
 }
 
+//void CScriptGameObject::SetNpcPosition(Fvector pos)
+//{
+
 void CScriptGameObject::SetNpcPosition(Fvector pos)
 {
+    XR_STUTTER_NPC_SCOPE(Phase, "spawn.physics.set_position", "Lua set_npc_position", object().ID());
+    if (!_valid(pos))
+    {
+        Msg("! [spawn.physics] rejected non-finite Lua position: id=%u name=%s", object().ID(), object().cName().c_str());
+        return;
+    }
     CCustomMonster* obj = smart_cast<CCustomMonster*>(&object());
+    if (obj)
+    {
+        Fmatrix F = obj->XFORM();
+#if XRAY_ENABLE_STUTTER_TIMERS
+        if (StutterProfile::InNpcSpawn() && StutterProfile::Enabled(StutterProfile::Category::Phase))
+        {
+            char detail[96];
+            StutterProfile::Scope before, target;
+            std::snprintf(detail, sizeof(detail), "xyz=%.9g,%.9g,%.9g", double(F.c.x), double(F.c.y), double(F.c.z));
+            before.Begin(StutterProfile::Category::Phase, "spawn.position.before_lua", detail, object().ID());
+            before.AsPoint();
+            std::snprintf(detail, sizeof(detail), "xyz=%.9g,%.9g,%.9g", double(pos.x), double(pos.y), double(pos.z));
+            target.Begin(StutterProfile::Category::Phase, "spawn.position.requested", detail, object().ID());
+            target.AsPoint();
+        }
+#endif
+
+        // Статистика викликів (припускаємо головний потік)
+        static u64 totalCalls = 0;
+        static u64 totalSame = 0;
+        static u64 totalNear = 0;
+        static u32 lastLogTime = Device.dwTimeGlobal;
+
+        ++totalCalls;
+
+        // Точне порівняння координат
+        const bool same =
+            F.c.x == pos.x &&
+            F.c.y == pos.y &&
+            F.c.z == pos.z;
+
+        if (same)
+        {
+            ++totalSame;
+        }
+        else
+        {
+            // Відстань між поточною та новою позиціями
+            const float dx = F.c.x - pos.x;
+            const float dy = F.c.y - pos.y;
+            const float dz = F.c.z - pos.z;
+
+            const float distanceSq = dx * dx + dy * dy + dz * dz;
+
+            // Менше або дорівнює 1 мм (якщо одиниці — метри)
+            if (distanceSq <= 0.000001f)
+                ++totalNear;
+        }
+
+        // Оригінальна логіка переміщення
+        F.c = pos;
+
+        obj->movement().detail().make_inactual();
+
+        if (obj->animation_movement_controlled())
+            obj->destroy_anim_mov_ctrl();
+
+        obj->ForceTransform(F);
+
+        // Виведення статистики раз на секунду
+        const u32 now = Device.dwTimeGlobal;
+
+        if (now - lastLogTime >= 1000)
+        {
+            const u64 changed = totalCalls - totalSame - totalNear;
+
+            /*Msg("[NPC_POS] total=%llu same=%llu near=%llu changed=%llu same_pct=%.1f%%",
+                (unsigned long long)totalCalls,
+                (unsigned long long)totalSame,
+                (unsigned long long)totalNear,
+                (unsigned long long)changed,
+                totalCalls ? 100.0 * totalSame / totalCalls : 0.0);*/
+
+            lastLogTime = now;
+        }
+    }
+    else
+    {
+        GEnv.ScriptEngine->script_log(LuaMessageType::Error,
+            "ScriptGameObject : attempt to call SetNpcPosition method for non-CCustomMonster object");
+    }
+}
+
+    /*CCustomMonster* obj = smart_cast<CCustomMonster*>(&object());
     if (obj)
     {
         Fmatrix F = obj->XFORM();
@@ -377,6 +472,19 @@ void CScriptGameObject::SetNpcPosition(Fvector pos)
     else
         GEnv.ScriptEngine->script_log(LuaMessageType::Error,
             "ScriptGameObject : attempt to call SetActorPosition method for non-CCustomMonster object");
+}*/
+
+void CScriptGameObject::SetNpcPositionFromSpawn(Fvector pos, LPCSTR source)
+{
+#if XRAY_ENABLE_STUTTER_TIMERS
+    StutterProfile::Scope positionSource;
+    if (StutterProfile::InNpcSpawn() && StutterProfile::Enabled(StutterProfile::Category::Phase))
+    {
+        positionSource.Begin(StutterProfile::Category::Phase, "spawn.position.source", source, object().ID());
+        positionSource.AsPoint();
+    }
+#endif
+    SetNpcPosition(pos);
 }
 
 void CScriptGameObject::SetActorDirection(float dir)

@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <!-- No instrumentation in normal Release builds; explicit /p opt-in is retained. -->
+    <XrayStutterTimers Condition="'$(XrayStutterTimers)'=='' and $(Configuration.Contains('Release'))">0</XrayStutterTimers>
+    <XrayStutterTimers Condition="'$(XrayStutterTimers)'==''">1</XrayStutterTimers>
+    <XrayLegacyRelcaseProfile Condition="'$(XrayLegacyRelcaseProfile)'==''">0</XrayLegacyRelcaseProfile>
+  </PropertyGroup>
+  <!-- General profiling backends remain disabled in Release. -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <PreprocessorDefinitions>TRACY_NO_ENABLE;TRACY_NO_FRAME_IMAGE;XRAY_SOUND_DIAGNOSTICS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>TRACY_ENABLE;USE_PROFILER;CONFIG_PROFILE_LOCKS;XR_SHADER_CACHE_DIAG;%(UndefinePreprocessorDefinitions)</UndefinePreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <!-- Common global settings -->
   <PropertyGroup Label="Configuration">
     <UseDebugLibraries>false</UseDebugLibraries>
@@ -26,6 +39,8 @@
         IMGUI_DISABLE_OBSOLETE_FUNCTIONS;
         IMGUI_DEFINE_MATH_OPERATORS;
         XRAY_USE_LUAJIT=1;
+        XRAY_ENABLE_STUTTER_TIMERS=$(XrayStutterTimers);
+        XRAY_ENABLE_LEGACY_RELCASE_PROFILE=$(XrayLegacyRelcaseProfile);
         %(PreprocessorDefinitions)
       </PreprocessorDefinitions>
       <BufferSecurityCheck>false</BufferSecurityCheck>

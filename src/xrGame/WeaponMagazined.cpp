@@ -21,6 +21,14 @@
 #include "xrScriptEngine/script_callback_ex.h"
 #include "script_game_object.h"
 #include "HudSound.h"
+#include <map>
+#include <mutex>
+#include <string>
+
+#ifdef DEBUG
+static u64 g_weapon_sound_cache_hits = 0;
+static u64 g_weapon_sound_cache_misses = 0;
+#endif
 
 CWeaponMagazined::CWeaponMagazined(ESoundTypes eSoundType) : CWeapon(), m_bStopedAfterQueueFired(false)
 {
@@ -55,13 +63,62 @@ void CWeaponMagazined::net_Destroy() { inherited::net_Destroy(); }
 //AVO: for custom added sounds check if sound exists
 bool CWeaponMagazined::WeaponSoundExist(pcstr section, pcstr sound_name) const
 {
-    pcstr str;
+
+     using SoundCacheKey = std::pair<std::string, std::string>;
+
+    static std::map<SoundCacheKey, bool> sound_cache;
+    static std::mutex sound_cache_mutex;
+
+    const SoundCacheKey key{ section, sound_name };
+
+    bool exists;
+
+    {
+        std::lock_guard<std::mutex> lock(sound_cache_mutex);
+
+        auto it = sound_cache.find(key);
+
+        if (it != sound_cache.end())
+        {
+#ifdef DEBUG
+            ++g_weapon_sound_cache_hits;
+#endif
+            exists = it->second;
+        }
+        else
+        {
+#ifdef DEBUG
+            ++g_weapon_sound_cache_misses;
+#endif
+
+            pcstr str = nullptr;
+
+            exists = process_if_exists_set(
+                section,
+                sound_name,
+                &CInifile::r_string,
+                str,
+                true
+            );
+
+            sound_cache.emplace(key, exists);
+        }
+    }
+
+#ifdef DEBUG
+    if (!exists)
+        Msg("~ [WARNING] ------ Sound [%s] does not exist in [%s]", sound_name, section);
+#endif
+
+    return exists;
+
+   /* pcstr str;
     if (process_if_exists_set(section, sound_name, &CInifile::r_string, str, true))
         return true;
 #ifdef DEBUG
     Msg("~ [WARNING] ------ Sound [%s] does not exist in [%s]", sound_name, section);
 #endif
-    return false;
+    return false;*/
 }
 
 //-AVO

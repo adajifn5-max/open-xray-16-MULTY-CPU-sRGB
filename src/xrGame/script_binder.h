@@ -8,6 +8,7 @@
 
 #pragma once
 
+
 class CSE_Abstract;
 class CScriptBinderObject;
 class NET_Packet;
@@ -33,6 +34,7 @@ public:
     virtual void load(IReader& input_packet);
     virtual BOOL net_SaveRelevant();
     virtual void net_Relcase(IGameObject* object);
+    bool can_skip_net_relcase() const;
     void set_object(CScriptBinderObject* object);
     IC CScriptBinderObject* object();
 };

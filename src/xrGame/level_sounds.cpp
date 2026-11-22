@@ -1,4 +1,5 @@
 #include "StdAfx.h"
+#include "xrCore/StutterProfile.h"
 #pragma hdrstop
 
 #include "Level.h"
@@ -224,6 +225,7 @@ void CLevelSoundManager::Unload()
 
 void CLevelSoundManager::Update()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CLevelSoundManager::Update");
     ZoneScoped;
 
     if (Device.Paused())

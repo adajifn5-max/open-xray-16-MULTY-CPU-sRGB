@@ -39,5 +39,9 @@ public:
     virtual bool net_SaveRelevant();
     static bool net_SaveRelevant_static(CScriptBinderObject* script_binder_object);
     virtual void net_Relcase(CScriptGameObject* object);
+    bool can_skip_net_relcase();
     static void net_Relcase_static(CScriptBinderObject* script_binder_object, CScriptGameObject* object);
+
+private:
+    bool m_netRelcaseNoLuaOverride;
 };

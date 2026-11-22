@@ -144,6 +144,24 @@ void CBlender_Tree::Compile(CBlender_Compile& C)
         C.r_End();
         break;
 
+#if defined(USE_DX11) && !defined(_EDITOR)
+    case SE_R1_LMODELS: // E[4]: private far-foliage forward element for B_TREE
+        if (!HW.DX10Only && HW.FeatureLevel >= D3D_FEATURE_LEVEL_11_0 && oBlend.value)
+        {
+            C.SetParams(2, false); // priority/2 == 1: existing forward queue
+            C.SH->flags.bFoliageFar = TRUE;
+            C.r_Pass(oNotAnTree.value ? "foliage_far_tree_s" : "foliage_far_tree",
+                "foliage_far", FALSE, TRUE, TRUE, FALSE);
+            C.r_Stencil(FALSE, D3DCMP_ALWAYS, 0xff, 0,
+                D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP, D3DSTENCILOP_KEEP);
+            C.SampledImage("smp_base", "s_base", C.L_textures[0]);
+            if (bUseATOC)
+                C.RS.SetRS(XRDX11RS_ALPHATOCOVERAGE, TRUE);
+            C.r_End();
+        }
+        break;
+#endif
+
     case SE_R2_SHADOW:  // smap-spot
         // TODO: DX11: Use dumb shader for shadowmap since shadows are drawn using hardware PCF
         if (oBlend.value)

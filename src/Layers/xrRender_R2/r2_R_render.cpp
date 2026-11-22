@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 
 #include "xrCore/Threading/TaskManager.hpp"
 
@@ -77,6 +78,7 @@ void CRender::RenderMenu()
 extern u32 g_r;
 void CRender::Render()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CRender::Render");
     ZoneScoped;
 #if defined(USE_DX11)
     TracyD3D11Zone(HW.profiler_ctx, "Render");
@@ -106,6 +108,13 @@ void CRender::Render()
 
     //.	VERIFY					(g_pGameLevel && g_pGameLevel->pHUD);
     auto& dsgraph = get_imm_context();
+
+#if defined(USE_DX11)
+    // Submit shared detail deformation before any main/shadow draw, including
+    // parallel deferred contexts. No pass may mutate this frame's cache.
+    if (Details)
+        Details->hw_PrepareWind();
+#endif
 
     //******* Z-prefill calc - DEFERRER RENDERER
     if (ps_r2_ls_flags.test(R2FLAG_ZFILL))

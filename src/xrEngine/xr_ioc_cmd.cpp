@@ -1,4 +1,10 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
+#if XRAY_ENABLE_STUTTER_TIMERS
+#include <sstream>
+#include <locale>
+#include <cmath>
+#endif
 #include "IGame_Level.h"
 
 #include "XR_IOConsole.h"
@@ -161,7 +167,7 @@ public:
 };
 
 //-----------------------------------------------------------------------
-class CCC_SaveCFG : public IConsole_Command
+/*class CCC_SaveCFG : public IConsole_Command
 {
 public:
     CCC_SaveCFG(pcstr N) : IConsole_Command(N) { bEmptyArgsHandled = true; };
@@ -196,7 +202,81 @@ public:
             Msg("! Cannot store config file [%s]", cfg_full_name);
     }
 };
-CCC_LoadCFG::CCC_LoadCFG(pcstr N) : IConsole_Command(N){};
+CCC_LoadCFG::CCC_LoadCFG(pcstr N) : IConsole_Command(N){};*/
+
+class CCC_SaveCFG : public IConsole_Command
+{
+public:
+    CCC_SaveCFG(pcstr N) : IConsole_Command(N)
+    {
+        bEmptyArgsHandled = true;
+    }
+
+    virtual void Execute(pcstr args)
+    {
+        string_path cfg_full_name;
+        xr_strcpy(cfg_full_name,
+            (xr_strlen(args) > 0) ? args : Console->ConfigFile);
+
+        bool b_abs_name =
+            xr_strlen(cfg_full_name) > 2 && cfg_full_name[1] == ':';
+
+        if (!b_abs_name)
+            FS.update_path(cfg_full_name, "$app_data_root$", cfg_full_name);
+
+        if (strext(cfg_full_name))
+            *strext(cfg_full_name) = 0;
+
+        xr_strcat(cfg_full_name, ".ltx");
+
+        bool b_allow = true;
+
+#if defined(XR_PLATFORM_WINDOWS)
+        if (FS.exist(cfg_full_name))
+            b_allow = SetFileAttributes(
+                cfg_full_name, FILE_ATTRIBUTE_NORMAL);
+#endif
+
+        if (b_allow)
+        {
+            IWriter* F = FS.w_open(cfg_full_name);
+
+            // SSR settings are used by the OpenGL renderer only.
+            const pcstr renderer = Console->GetString("renderer");
+            const bool isOpenGL =
+                renderer && xr_strcmp(renderer, "renderer_rgl") == 0;
+
+            for (const auto& [name, command] : Console->Commands)
+            {
+                // Do not save GL-only SSR settings for DX renderers.
+                if (!isOpenGL)
+                {
+                    const pcstr commandName = command->Name();
+
+                    if (xr_strcmp(commandName, "r3_water_refl") == 0 ||
+                        xr_strcmp(commandName, "r3_water_refl_half_depth") == 0 ||
+                        xr_strcmp(commandName, "r3_water_refl_jitter") == 0)
+                    {
+                        continue;
+                    }
+                }
+
+                command->Save(F);
+            }
+
+            FS.w_close(F);
+
+            Msg("Config-file [%s] saved successfully", cfg_full_name);
+        }
+        else
+        {
+            Msg("! Cannot store config file [%s]", cfg_full_name);
+        }
+    }
+};
+
+CCC_LoadCFG::CCC_LoadCFG(pcstr N) : IConsole_Command(N) {};
+
 
 void CCC_LoadCFG::Execute(pcstr args)
 {
@@ -719,8 +799,91 @@ ENGINE_API shared_str current_player_hud_sect{};
 extern int ps_fps_limit;
 extern int ps_fps_limit_in_menu;
 
+#if XRAY_ENABLE_STUTTER_TIMERS
+class CCC_StutterProfile : public IConsole_Command
+{
+public:
+    CCC_StutterProfile(pcstr name) : IConsole_Command(name) { bEmptyArgsHandled = true; }
+    void Save(IWriter*) override {} // Never enable a capture through user.ltx.
+    void GetStatus(TStatus& status) override
+    {
+        const auto s = StutterProfile::GetStatus();
+        xr_sprintf(status, sizeof(status), "active_mask=%u selected_mask=%u events=%u dropped=%u",
+            s.mask, s.selectedMask, s.captured, s.dropped);
+    }
+    void Info(TInfo& info) override
+    {
+        xr_strcpy(info, "start|stop|dump|clear|status|mask N|threshold CATEGORY MS");
+    }
+    void Execute(pcstr args) override
+    {
+        std::istringstream input(args);
+        input.imbue(std::locale::classic());
+        std::string op, extra;
+        input >> op;
+        if (op == "mask")
+        {
+            unsigned mask;
+            if (!(input >> mask) || mask > StutterProfile::AllCategories || (input >> extra))
+                return InvalidSyntax();
+            StutterProfile::SetMask(mask);
+        }
+        else if (op == "threshold")
+        {
+            std::string category;
+            double ms;
+            if (!(input >> category >> ms) || !std::isfinite(ms) || ms < 0 || ms > 60000 || (input >> extra))
+                return InvalidSyntax();
+            static const char* names[]{"spawn", "sound", "relcase", "wait", "phase", "frame", "task"};
+            unsigned i = 0;
+            while (i < static_cast<unsigned>(StutterProfile::Category::Count) && category != names[i]) ++i;
+            if (i == static_cast<unsigned>(StutterProfile::Category::Count)) return InvalidSyntax();
+            StutterProfile::SetThreshold(static_cast<StutterProfile::Category>(i),
+                static_cast<std::uint32_t>(ms * 1000.0 + 0.5));
+        }
+        else
+        {
+            if (input >> extra) return InvalidSyntax();
+            if (op == "start" || op == "on" || op == "1")
+            {
+                StutterProfile::SetFrame(Device.dwFrame);
+                if (!StutterProfile::Start()) Msg("! STUTTER: cannot start (zero mask or buffer allocation failed)");
+            }
+            else if (op == "stop" || op == "off" || op == "0") StutterProfile::Stop();
+            else if (op == "clear")
+            {
+                if (!StutterProfile::Clear()) Msg("! STUTTER: stop capture before clear");
+            }
+            else if (op == "dump")
+            {
+                StutterProfile::Stop();
+                const auto s = StutterProfile::GetStatus();
+                if (!s.session) { Msg("! STUTTER: no capture has been started"); return; }
+                string_path path;
+                string128 filename;
+                xr_sprintf(filename, sizeof(filename), "stutter_profile_%llu.csv",
+                    static_cast<unsigned long long>(s.session));
+                FS.update_path(path, "$logs$", filename);
+                if (StutterProfile::Dump(path)) Msg("* STUTTER: saved %u events to %s", s.captured, path);
+                else Msg("! STUTTER: cannot write %s (buffer retained)", path);
+            }
+            else if (!op.empty() && op != "status") return InvalidSyntax();
+        }
+        const auto s = StutterProfile::GetStatus();
+        Msg("* STUTTER: active_mask=%u selected_mask=%u events=%u/%u dropped=%u",
+            s.mask, s.selectedMask, s.captured, s.capacity, s.dropped);
+        Msg("* STUTTER thresholds us: spawn=%u sound=%u relcase=%u wait=%u phase=%u frame=%u task=%u",
+            s.thresholdsUs[0], s.thresholdsUs[1], s.thresholdsUs[2], s.thresholdsUs[3],
+            s.thresholdsUs[4], s.thresholdsUs[5], s.thresholdsUs[6]);
+    }
+};
+#endif
+
 void CCC_Register()
 {
+#if XRAY_ENABLE_STUTTER_TIMERS
+    CMD1(CCC_StutterProfile, "stutter_profile");
+#endif
     // General
     CMD1(CCC_Help, "help");
     CMD1(CCC_Quit, "quit");

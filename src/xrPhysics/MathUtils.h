@@ -438,7 +438,7 @@ IC u8 TransferenceAndThrowVelToThrowDir(
 
 struct SInertVal
 {
-    float val;
+    float val; //check
     const float inertion;
     SInertVal(float inert) : inertion(inert) { R_ASSERT(inert > 0.f && inert < 1.f); }
     IC void new_val(float new_val) { val = inertion * val + (1 - inertion) * new_val; }

@@ -169,15 +169,21 @@ void dxEnvironmentRender::lerp(CEnvDescriptorMixer& currentEnv, IEnvDescriptorRe
     dxEnvDescriptorRender* pA = static_cast<dxEnvDescriptorRender*>(inA);
     dxEnvDescriptorRender* pB = static_cast<dxEnvDescriptorRender*>(inB);
 
+    // Dynamic lists must retain the colour-view semantics of compiled passes.
+    u32 colourStageFlag = 0;
+#if defined(USE_DX11)
+    if (RImplementation.o.linear_rendering)
+        colourStageFlag = 0x80000000u;
+#endif
     sky_r_textures.clear();
-    sky_r_textures.emplace_back(tsky0_tstage, pA->sky_texture);
-    sky_r_textures.emplace_back(tsky1_tstage, pB->sky_texture);
+    sky_r_textures.emplace_back(tsky0_tstage | colourStageFlag, pA->sky_texture);
+    sky_r_textures.emplace_back(tsky1_tstage | colourStageFlag, pB->sky_texture);
     if (tonemap_tstage_2sky != u32(-1))
         sky_r_textures.emplace_back(tonemap_tstage_2sky, tonemap);
 
     clouds_r_textures.clear();
-    clouds_r_textures.emplace_back(tclouds0_tstage, pA->clouds_texture);
-    clouds_r_textures.emplace_back(tclouds1_tstage, pB->clouds_texture);
+    clouds_r_textures.emplace_back(tclouds0_tstage | colourStageFlag, pA->clouds_texture);
+    clouds_r_textures.emplace_back(tclouds1_tstage | colourStageFlag, pB->clouds_texture);
     if (tonemap_tstage_clouds != u32(-1))
         clouds_r_textures.emplace_back(tonemap_tstage_clouds, tonemap);
 
@@ -380,9 +386,13 @@ void dxEnvironmentRender::OnDeviceCreate()
             tclouds1_tstage = C->samp.index;
     }
 
-    const bool r2 = RImplementation.GenerationIsR2OrHigher();
-    tonemap_tstage_2sky = sh_2sky->E[0]->passes[0]->T->find_texture_stage(r2_RT_luminance_cur, r2);
-    tonemap_tstage_clouds = clouds_sh->E[0]->passes[0]->T->find_texture_stage(r2_RT_luminance_cur, r2);
+    bool requiresToneMap = RImplementation.GenerationIsR2OrHigher();
+#if defined(USE_DX11)
+    // Linear sky/cloud VS do not pre-expose colour; final PP owns exposure.
+    requiresToneMap &= !RImplementation.o.linear_rendering;
+#endif
+    tonemap_tstage_2sky = sh_2sky->E[0]->passes[0]->T->find_texture_stage(r2_RT_luminance_cur, requiresToneMap);
+    tonemap_tstage_clouds = clouds_sh->E[0]->passes[0]->T->find_texture_stage(r2_RT_luminance_cur, requiresToneMap);
 }
 
 void dxEnvironmentRender::OnDeviceDestroy()

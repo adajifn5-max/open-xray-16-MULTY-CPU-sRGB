@@ -1,8 +1,10 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #pragma hdrstop
 
 #include "Layers/xrRender/ResourceManager.h"
-
+#include "dx11ColorSpace.h"
+#include <d3d11sdklayers.h> //перевірка
 #include "xrEngine/tntQAVI.h"
 #include "xrEngine/xrTheora_Surface.h"
 #include "StateManager/dx11ShaderResourceStateCache.h"
@@ -97,6 +99,10 @@ void CTexture::surface_set(ID3DBaseTexture* surf)
                 }
             }
 
+            if (RImplementation.o.linear_rendering &&
+                texture_color::ResourceFormat(texture_color::LinearViewFormat(desc.Format)) == desc.Format)
+                ViewDesc.Format = texture_color::LinearViewFormat(desc.Format);
+
             switch (desc.Format)
             {
             case DXGI_FORMAT_R32G8X24_TYPELESS:
@@ -116,9 +122,77 @@ void CTexture::surface_set(ID3DBaseTexture* surf)
                 break;
             }
 
-            _RELEASE(srv_all);
-            CHK_DX(HW.pDevice->CreateShaderResourceView(pSurface, &ViewDesc, &srv_all));
+   //_RELEASE(srv_all);
 
+            /*// SRV diagnostic only: keep the original ViewDesc and texture formats unchanged.
+            // The D3D11 debug layer, when enabled at device creation, supplies InfoQueue messages.
+            ID3D11InfoQueue* pInfoQueue = nullptr;
+            const HRESULT infoQueueHr = HW.pDevice->QueryInterface(
+                __uuidof(ID3D11InfoQueue), reinterpret_cast<void**>(&pInfoQueue));
+            const UINT64 firstMessage = pInfoQueue ? pInfoQueue->GetNumStoredMessages() : 0;
+
+            const HRESULT srvHr = HW.pDevice->CreateShaderResourceView(
+                pSurface, &ViewDesc, &srv_all);
+
+            Msg("[SRV_CHECK] %s | resource=%u | requested=%u | samples=%u | hr=0x%08X | debug=%u",
+                cName.c_str(),
+                static_cast<unsigned>(desc.Format),
+                static_cast<unsigned>(ViewDesc.Format),
+                static_cast<unsigned>(desc.SampleDesc.Count),
+                static_cast<unsigned>(srvHr),
+                SUCCEEDED(infoQueueHr) && pInfoQueue ? 1u : 0u);
+
+            if (SUCCEEDED(srvHr) && srv_all)
+            {
+                D3D11_SHADER_RESOURCE_VIEW_DESC actualDesc{};
+                srv_all->GetDesc(&actualDesc);
+                Msg("[SRV_ACTUAL] %s | format=%u | dimension=%u",
+                    cName.c_str(),
+                    static_cast<unsigned>(actualDesc.Format),
+                    static_cast<unsigned>(actualDesc.ViewDimension));
+            }
+
+            if (pInfoQueue)
+            {
+                const UINT64 messageCount = pInfoQueue->GetNumStoredMessages();
+                for (UINT64 messageIndex = firstMessage; messageIndex < messageCount; ++messageIndex)
+                {
+                    SIZE_T messageSize = 0;
+                    if (FAILED(pInfoQueue->GetMessage(messageIndex, nullptr, &messageSize)) || !messageSize)
+                        continue;
+
+                    xr_vector<u8> messageBuffer(messageSize);
+                    D3D11_MESSAGE* message = reinterpret_cast<D3D11_MESSAGE*>(messageBuffer.data());
+                    if (SUCCEEDED(pInfoQueue->GetMessage(messageIndex, message, &messageSize)) &&
+                        (message->Severity == D3D11_MESSAGE_SEVERITY_WARNING ||
+                         message->Severity == D3D11_MESSAGE_SEVERITY_ERROR ||
+                         message->Severity == D3D11_MESSAGE_SEVERITY_CORRUPTION))
+                    {
+                        Msg("[D3D11_DEBUG] %s | severity=%u | %s",
+                            cName.c_str(),
+                            static_cast<unsigned>(message->Severity),
+                            message->pDescription);
+                    }
+                }
+                pInfoQueue->Release();
+            }
+            */
+            // Preserve the original OpenXRay error handling after diagnostics.
+            // CHK_DX(srvHr); // Disabled: srvHr is declared only in the diagnostics block.
+            _RELEASE(srv_all);
+                CHK_DX(HW.pDevice->CreateShaderResourceView(
+    pSurface, &ViewDesc, &srv_all));
+           /* if (m_pSRView &&
+    strstr(cName.c_str(), "wpn\\"))
+{
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    m_pSRView->GetDesc(&srvDesc);
+
+    Msg("[SRV] %s | format=%u | dimension=%u",
+        cName.c_str(),
+        static_cast<unsigned>(srvDesc.Format),
+        static_cast<unsigned>(srvDesc.ViewDimension));
+}*/
             srv_per_slice.resize(desc.ArraySize);
             for (u32 id = 0; id < desc.ArraySize; ++id)
             {
@@ -141,7 +215,12 @@ void CTexture::surface_set(ID3DBaseTexture* surf)
         else
         {
             _RELEASE(m_pSRView);
-            CHK_DX(HW.pDevice->CreateShaderResourceView(pSurface, NULL, &m_pSRView));
+            {
+                XR_STUTTER_DISABLED_SCOPE(Phase, "render.texture_srv", cName.c_str());
+                CHK_DX(RImplementation.o.linear_rendering
+                    ? texture_color::CreateLinearView(HW.pDevice, pSurface, &m_pSRView)
+                    : HW.pDevice->CreateShaderResourceView(pSurface, NULL, &m_pSRView));
+            }
         }
     }
 }
@@ -174,8 +253,42 @@ void CTexture::apply_load(CBackend& cmd_list, u32 dwStage)
     bind(cmd_list, dwStage);
 };
 
+ID3DShaderResourceView* CTexture::UIShaderView() const
+{
+    return RImplementation.o.linear_rendering ? ColorView() : m_pSRView;
+}
+
+ID3DShaderResourceView* CTexture::ColorView() const
+{
+    if (!m_pSRView)
+        return nullptr;
+    D3D_SHADER_RESOURCE_VIEW_DESC view;
+    m_pSRView->GetDesc(&view);
+    const auto colorFormat = DirectX::MakeSRGB(view.Format);
+    if (colorFormat == view.Format)
+        return m_pSRView; // Floating point HDR and data formats have no sRGB view.
+    if (m_srgbSource != m_pSRView)
+    {
+        _RELEASE(m_srgbView);
+        _RELEASE(m_srgbSource);
+        m_srgbSource = m_pSRView;
+        m_srgbSource->AddRef(); // Prevent stale pointer reuse for sequence/array views.
+        ID3D11Resource* resource = nullptr;
+        m_pSRView->GetResource(&resource);
+        view.Format = colorFormat;
+        const auto hr = HW.pDevice->CreateShaderResourceView(resource, &view, &m_srgbView);
+        _RELEASE(resource);
+        if (FAILED(hr))
+            Msg("! sRGB view unavailable: %s, HRESULT=%08X", cName.c_str(), unsigned(hr));
+    }
+    return m_srgbView ? m_srgbView : m_pSRView;
+}
+
 void CTexture::Apply(CBackend& cmd_list, u32 dwStage) const
 {
+    const bool color = (dwStage & texture_color::StageSRGB) != 0;
+    dwStage &= ~texture_color::StageSRGB;
+    auto* resourceView = color ? ColorView() : m_pSRView;
     // if( !RImplementation.o.msaa )
     //   VERIFY( !((!pSurface)^(!m_pSRView)) );	//	Both present or both missing
     // else
@@ -186,27 +299,27 @@ void CTexture::Apply(CBackend& cmd_list, u32 dwStage) const
 
     if (dwStage < rstVertex) //	Pixel shader stage resources
     {
-        cmd_list.SRVSManager.SetPSResource(dwStage, m_pSRView);
+        cmd_list.SRVSManager.SetPSResource(dwStage, resourceView);
     }
     else if (dwStage < rstGeometry) //	Vertex shader stage resources
     {
-        cmd_list.SRVSManager.SetVSResource(dwStage - rstVertex, m_pSRView);
+        cmd_list.SRVSManager.SetVSResource(dwStage - rstVertex, resourceView);
     }
     else if (dwStage < rstHull) //	Geometry shader stage resources
     {
-        cmd_list.SRVSManager.SetGSResource(dwStage - rstGeometry, m_pSRView);
+        cmd_list.SRVSManager.SetGSResource(dwStage - rstGeometry, resourceView);
     }
     else if (dwStage < rstDomain) //	Geometry shader stage resources
     {
-        cmd_list.SRVSManager.SetHSResource(dwStage - rstHull, m_pSRView);
+        cmd_list.SRVSManager.SetHSResource(dwStage - rstHull, resourceView);
     }
     else if (dwStage < rstCompute) //	Geometry shader stage resources
     {
-        cmd_list.SRVSManager.SetDSResource(dwStage - rstDomain, m_pSRView);
+        cmd_list.SRVSManager.SetDSResource(dwStage - rstDomain, resourceView);
     }
     else if (dwStage < rstInvalid) //	Geometry shader stage resources
     {
-        cmd_list.SRVSManager.SetCSResource(dwStage - rstCompute, m_pSRView);
+        cmd_list.SRVSManager.SetCSResource(dwStage - rstCompute, resourceView);
     }
     else
         VERIFY("Invalid stage");
@@ -313,9 +426,11 @@ void CTexture::Load()
 {
     flags.bLoaded = true;
     desc_cache = 0;
-    if (pSurface)
+    // SEQ resources already exist before the first apply_seq selects pSurface.
+    if (pSurface || !seqDATA.empty())
         return;
 
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.texture_load", cName.c_str());
     flags.bUser = false;
     flags.MemoryUsage = 0;
     if (0 == xr_stricmp(cName.c_str(), "$null"))
@@ -362,7 +477,7 @@ void CTexture::Load()
             desc.Height = _h;
             desc.MipLevels = 1;
             desc.ArraySize = 1;
-            desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            desc.Format = RImplementation.o.linear_rendering ? DXGI_FORMAT_R8G8B8A8_TYPELESS : DXGI_FORMAT_R8G8B8A8_UNORM;
             desc.SampleDesc.Count = 1;
             desc.SampleDesc.Quality = 0;
             desc.Usage = D3D_USAGE_DYNAMIC;
@@ -382,7 +497,7 @@ void CTexture::Load()
             }
             else
             {
-                CHK_DX(HW.pDevice->CreateShaderResourceView(pSurface, 0, &m_pSRView));
+                CHK_DX(RImplementation.o.linear_rendering ? texture_color::CreateLinearView(HW.pDevice, pSurface, &m_pSRView) : HW.pDevice->CreateShaderResourceView(pSurface, 0, &m_pSRView));
             }
         }
     }
@@ -407,7 +522,7 @@ void CTexture::Load()
             desc.Height = pAVI->m_dwHeight;
             desc.MipLevels = 1;
             desc.ArraySize = 1;
-            desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            desc.Format = RImplementation.o.linear_rendering ? DXGI_FORMAT_R8G8B8A8_TYPELESS : DXGI_FORMAT_R8G8B8A8_UNORM;
             desc.SampleDesc.Count = 1;
             desc.SampleDesc.Quality = 0;
             desc.Usage = D3D_USAGE_DYNAMIC;
@@ -427,12 +542,13 @@ void CTexture::Load()
             }
             else
             {
-                CHK_DX(HW.pDevice->CreateShaderResourceView(pSurface, 0, &m_pSRView));
+                CHK_DX(RImplementation.o.linear_rendering ? texture_color::CreateLinearView(HW.pDevice, pSurface, &m_pSRView) : HW.pDevice->CreateShaderResourceView(pSurface, 0, &m_pSRView));
             }
         }
     }
     else if (FS.exist(fn, "$game_textures$", cName.c_str(), ".seq"))
     {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "render.texture_seq", cName.c_str());
         // Sequence
         string256 buffer;
         IReader* _fs = FS.r_open(fn);
@@ -453,6 +569,7 @@ void CTexture::Load()
             _Trim(buffer);
             if (buffer[0])
             {
+                XR_STUTTER_DISABLED_SCOPE(Phase, "render.seq_frame", buffer, seqDATA.size());
                 // Load another texture
                 u32 mem = 0;
                 pSurface = RImplementation.texture_load(buffer, mem);
@@ -460,7 +577,12 @@ void CTexture::Load()
                 {
                     seqDATA.push_back(pSurface);
                     m_seqSRView.push_back(0);
-                    HW.pDevice->CreateShaderResourceView(seqDATA.back(), NULL, &m_seqSRView.back());
+                    {
+                        XR_STUTTER_DISABLED_SCOPE(Phase, "render.texture_srv", buffer);
+                        CHK_DX(RImplementation.o.linear_rendering
+                            ? texture_color::CreateLinearView(HW.pDevice, seqDATA.back(), &m_seqSRView.back())
+                            : HW.pDevice->CreateShaderResourceView(seqDATA.back(), NULL, &m_seqSRView.back()));
+                    }
                     flags.MemoryUsage += mem;
                 }
             }
@@ -478,7 +600,29 @@ void CTexture::Load()
         if (pSurface)
         {
             flags.MemoryUsage = mem;
-            CHK_DX(HW.pDevice->CreateShaderResourceView(pSurface, NULL, &m_pSRView));
+            {
+                XR_STUTTER_DISABLED_SCOPE(Phase, "render.texture_srv", cName.c_str());
+                CHK_DX(RImplementation.o.linear_rendering
+                    ? texture_color::CreateLinearView(HW.pDevice, pSurface, &m_pSRView)
+                    : HW.pDevice->CreateShaderResourceView(pSurface, NULL, &m_pSRView));
+            #if 0 // OLD SRV LOGGING DISABLED
+                // === SRV DIAGNOSTICS ===
+        Msg("[SRV_TRACE] %s | created=%d",
+            cName.c_str(),
+            m_pSRView ? 1 : 0);
+        if (m_pSRView)
+        {
+            D3D_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+            m_pSRView->GetDesc(&srvDesc);
+
+            Msg("[SRV] %s | format=%u | dimension=%u",
+                cName.c_str(),
+                static_cast<unsigned>(srvDesc.Format),
+                static_cast<unsigned>(srvDesc.ViewDimension));
+        }
+        // =======================
+            #endif // OLD SRV LOGGING DISABLED
+                }
         }
     }
 
@@ -501,6 +645,8 @@ void CTexture::Unload()
     _SHOW_REF(msg_buff, pSurface);
 #endif // DEBUG
 
+    _RELEASE(m_srgbView);
+    _RELEASE(m_srgbSource);
     flags.bLoaded = FALSE;
     if (!seqDATA.empty())
     {

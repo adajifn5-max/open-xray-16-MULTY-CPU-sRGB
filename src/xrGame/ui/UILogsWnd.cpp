@@ -6,6 +6,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "StdAfx.h"
+#include "xrCore/StutterProfile.h"
 #include "UILogsWnd.h"
 #include "UIXmlInit.h"
 #include "xrUICore/ProgressBar/UIProgressBar.h"
@@ -234,6 +235,7 @@ void CUILogsWnd::ReLoadNews()
 
 void CUILogsWnd::PerformWork()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CUILogsWnd::PerformWork");
     if (!m_news_in_queue.empty())
     {
         u32 count = _min(30, m_news_in_queue.size());

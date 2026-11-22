@@ -454,7 +454,7 @@ public:
 
     vecBones children; // bones which are slaves to this
 
-    using FacesVec = xr_vector<u16>;
+    using FacesVec = xr_vector<u32>;
     using ChildFacesVec = xr_vector<FacesVec>;
     ChildFacesVec child_faces; // shared
 
@@ -468,7 +468,7 @@ public:
     [[nodiscard]] IC u16 GetSelfID() const override { return SelfID; }
     [[nodiscard]] IC u16 GetParentID() const override { return ParentID; }
     // assign face
-    void AppendFace(u16 child_idx, u16 idx) { child_faces[child_idx].push_back(idx); }
+    void AppendFace(u16 child_idx, u32 idx) { child_faces[child_idx].push_back(idx); }
     // Calculation
     void CalculateM2B(const Fmatrix& Parent);
 

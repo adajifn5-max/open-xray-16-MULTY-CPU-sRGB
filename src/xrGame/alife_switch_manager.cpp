@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "StdAfx.h"
+#include "xrCore/StutterProfile.h"
 #include "alife_switch_manager.h"
 #include "xrServer_Objects_ALife.h"
 #include "alife_graph_registry.h"
@@ -47,6 +48,7 @@ struct remove_non_savable_predicate
 CALifeSwitchManager::~CALifeSwitchManager() {}
 void CALifeSwitchManager::add_online(CSE_ALifeDynamicObject* object, bool update_registries)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::add_online", object->name_replace(), object->ID, object->m_tClassID);
     START_PROFILE("ALife/switch/add_online")
     VERIFY((ai().game_graph().vertex(object->m_tGraphID)->level_id() == graph().level().level_id()));
 
@@ -76,6 +78,7 @@ void CALifeSwitchManager::add_online(CSE_ALifeDynamicObject* object, bool update
 
 void CALifeSwitchManager::remove_online(CSE_ALifeDynamicObject* object, bool update_registries)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::remove_online", object->name_replace(), object->ID, object->m_tClassID);
     START_PROFILE("ALife/switch/remove_online")
     object->m_bOnline = false;
 
@@ -105,6 +108,7 @@ void CALifeSwitchManager::remove_online(CSE_ALifeDynamicObject* object, bool upd
 
 void CALifeSwitchManager::switch_online(CSE_ALifeDynamicObject* object)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::switch_online", object->name_replace(), object->ID, object->m_tClassID);
     START_PROFILE("ALife/switch/switch_online")
 #ifdef DEBUG
     //	if (psAI_Flags.test(aiALife))
@@ -118,6 +122,7 @@ void CALifeSwitchManager::switch_online(CSE_ALifeDynamicObject* object)
 
 void CALifeSwitchManager::switch_offline(CSE_ALifeDynamicObject* object)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::switch_offline", object->name_replace(), object->ID, object->m_tClassID);
     START_PROFILE("ALife/switch/switch_offline")
 #ifdef DEBUG
     //	if (psAI_Flags.test(aiALife))
@@ -131,6 +136,7 @@ void CALifeSwitchManager::switch_offline(CSE_ALifeDynamicObject* object)
 
 bool CALifeSwitchManager::synchronize_location(CSE_ALifeDynamicObject* I)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::synchronize_location", I->name_replace(), I->ID, I->m_tClassID);
     START_PROFILE("ALife/switch/synchronize_location")
 #ifdef DEBUG
     VERIFY3(ai().level_graph().level_id() == ai().game_graph().vertex(I->m_tGraphID)->level_id(), I->s_name.c_str(),
@@ -166,6 +172,7 @@ bool CALifeSwitchManager::synchronize_location(CSE_ALifeDynamicObject* I)
 
 void CALifeSwitchManager::try_switch_online(CSE_ALifeDynamicObject* I)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::try_switch_online", I->name_replace(), I->ID, I->m_tClassID);
     START_PROFILE("ALife/switch/try_switch_online")
     // so, the object is offline
     // checking if the object is not attached
@@ -207,6 +214,7 @@ void CALifeSwitchManager::try_switch_online(CSE_ALifeDynamicObject* I)
 
 void CALifeSwitchManager::try_switch_offline(CSE_ALifeDynamicObject* I)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::try_switch_offline", I->name_replace(), I->ID, I->m_tClassID);
     START_PROFILE("ALife/switch/try_switch_offline")
     // checking if the object is not attached
     if (0xffff != I->ID_Parent)
@@ -238,8 +246,10 @@ void CALifeSwitchManager::try_switch_offline(CSE_ALifeDynamicObject* I)
 
 void CALifeSwitchManager::switch_object(CSE_ALifeDynamicObject* I)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::switch_object", I->name_replace(), I->ID, I->m_tClassID);
     if (I->redundant())
     {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::release", I->name_replace(), I->ID, I->m_tClassID);
         release(I);
         return;
     }
@@ -253,5 +263,8 @@ void CALifeSwitchManager::switch_object(CSE_ALifeDynamicObject* I)
         try_switch_online(I);
 
     if (I->redundant())
+    {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::release", I->name_replace(), I->ID, I->m_tClassID);
         release(I);
+    }
 }

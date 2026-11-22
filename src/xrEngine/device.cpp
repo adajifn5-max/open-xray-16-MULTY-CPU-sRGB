@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 
 #include "Render.h"
 
@@ -14,6 +15,9 @@
 #include "xrScriptEngine/script_space.hpp"
 
 #include <SDL.h>
+#if XRAY_ENABLE_STUTTER_TIMERS
+#include <typeinfo>
+#endif
 
 ENGINE_API CRenderDevice Device;
 ENGINE_API CLoadScreenRenderer load_screen_renderer;
@@ -225,6 +229,7 @@ static void UpdateViewports()
 
 void CRenderDevice::DoRender()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CRenderDevice::DoRender", "", dwFrame, 0, 0);
     if (GEnv.isDedicatedServer)
         return;
 
@@ -248,6 +253,7 @@ void CRenderDevice::DoRender()
         UpdateViewports();
 
         RenderEnd(); // Present goes here
+        XR_STUTTER_PRESENT_ANCHOR(dwFrame);
     }
     else
     {
@@ -265,6 +271,8 @@ void CRenderDevice::ProcessFrame()
     if (!BeforeFrame())
         return;
 
+    XR_STUTTER_SET_FRAME(dwFrame + 1);
+    XR_STUTTER_DISABLED_SCOPE(Frame, "CRenderDevice::ProcessFrame", "", dwFrame + 1, 0, 0);
     const u64 frameStartTime = TimerGlobal.GetElapsed_ms();
 
     FrameMove();
@@ -274,10 +282,25 @@ void CRenderDevice::ProcessFrame()
     const auto& processSeqParallel = TaskScheduler->AddTask([this]
     {
         ZoneScopedN("ProcessParallelSequence");
-        for (u32 pit = 0; pit < seqParallel.size(); pit++)
-            seqParallel[pit]();
+        XR_STUTTER_DISABLED_SCOPE(Phase, "ProcessParallelSequence");
+        {
+            XR_STUTTER_DISABLED_SCOPE(Phase, "seqParallel.Process");
+            for (u32 pit = 0; pit < seqParallel.size(); pit++)
+            {
+                XR_STUTTER_DISABLED_SCOPE(Phase, "seqParallel.callback", "index/count", pit, seqParallel.size());
+                seqParallel[pit]();
+            }
+        }
         seqParallel.clear();
-        seqFrameMT.Process();
+        {
+            XR_STUTTER_DISABLED_SCOPE(Phase, "seqFrameMT.Process");
+            seqFrameMT.ProcessWith([](pureFrame* callback)
+            {
+                XR_STUTTER_DISABLED_SCOPE(Phase, "seqFrameMT.callback", typeid(*callback).name(),
+                    reinterpret_cast<std::uintptr_t>(callback));
+                pureFrame::OnPure(callback);
+            });
+        }
     });
 
     DoRender();
@@ -436,6 +459,8 @@ void CRenderDevice::FrameMove()
 
     dwFrame++;
     Core.dwFrame = dwFrame;
+    XR_STUTTER_SET_FRAME(dwFrame);
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CRenderDevice::FrameMove", "", dwFrame, 0, 0);
     dwTimeContinual = TimerMM.GetElapsed_ms() - app_inactive_time;
 
     fTimeDeltaReal = Timer.GetElapsed_sec();

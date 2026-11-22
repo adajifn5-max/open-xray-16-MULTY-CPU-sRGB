@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrEngine/IGame_Persistent.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -136,6 +137,7 @@ void CRenderTarget::phase_pp()
     //	Element 4 for color map post-process
     bool bCMap = u_need_CM();
     RCache.set_Element(s_postprocess_msaa->E[bCMap ? 4 : 0]);
+    RCache.set_c("linear_display_params", g_pGamePersistent && g_pGamePersistent->OnRenderPPUI_query() ? 0.f : 1.f, 0.f, 0.f, 0.f);
 
     int gblend = clampr(iFloor((1 - param_gray) * 255.f), 0, 255);
     int nblend = clampr(iFloor((1 - param_noise) * 255.f), 0, 255);

@@ -1,0 +1,6 @@
+#define USE_TDETAIL
+#ifdef SM_5
+#include "terrain_detail_lod.h"
+#else
+#include "deffer_impl_flat.ps"
+#endif

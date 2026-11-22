@@ -5,6 +5,7 @@
 #include "Layers/xrRender/Blender_Recorder.h"
 #include "Layers/xrRender/Blender.h"
 #include "Layers/xrRender/tss.h"
+#include "dx11ColorSpace.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -57,6 +58,8 @@ void CBlender_Compile::r_dx11Texture(LPCSTR ResourceName, LPCSTR texture, bool r
 
     R_ASSERT(C->type == RC_dx11texture);
     u32 stage = C->samp.index;
+    if (RImplementation.o.linear_rendering && texture_color::IsColorBinding(ResourceName, dest.ps ? dest.ps->cName.c_str() : nullptr))
+        stage |= texture_color::StageSRGB;
 
     passTextures.emplace_back(stage, ref_texture(RImplementation.Resources->_CreateTexture(TexName)));
 }

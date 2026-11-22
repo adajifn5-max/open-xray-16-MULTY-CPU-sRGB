@@ -50,9 +50,37 @@ extern float dm_current_fade;// = float(2*dm_current_size)-.5f;
 extern float ps_current_detail_density;
 extern float ps_current_detail_height;
 
-class ECORE_API CDetailManager
+//class ECORE_API CDetailManager
+//{
+//public:
+
+    class ECORE_API CDetailManager
 {
 public:
+    enum class FrameMode : u32
+    {
+        Still = 0,
+        Wave1 = 1,
+        Wave2 = 2
+    };
+
+    // Команда зміни режиму трави.
+    // Викликати з потоку рендерингу.
+   // void RequestFrameMode(FrameMode mode)
+   // {
+      //  m_requestedFrameMode = mode;
+   // }
+
+   /* struct SlotItem
+    {
+        float scale;
+        float scale_calculated;
+        Fmatrix mRotY;
+        u32 vis_ID;
+        float c_hemi;
+        float c_sun;
+        */
+
     struct SlotItem
     { // один кустик
         float scale;
@@ -61,6 +89,12 @@ public:
         u32 vis_ID; // индекс в visibility списке он же тип [не качается, качается1, качается2]
         float c_hemi;
         float c_sun;
+#if defined(USE_DX11)
+        // Validated against the per-model slot owner before reuse. poolSI.create()
+        // constructs SlotItem again, so recycled item addresses start invalid.
+        u32 wind_slot = u32(-1);
+        u32 wind_model = u32(-1);
+#endif
 #if RENDER == R_R1
         Fvector c_rgb;
 #endif
@@ -190,6 +224,14 @@ public:
     void soft_Unload();
     void soft_Render(const Fsphere* bounds);
 
+#if defined(USE_DX11)
+    // Called once by CRender before main/shadow command lists are recorded.
+    void hw_PrepareWind();
+    void hw_UnloadWind();
+    struct WindCache;
+    WindCache* m_windCache{};
+#endif
+
     // Hardware processor
     ref_geom hw_Geom;
     size_t hw_BatchSize;
@@ -239,5 +281,18 @@ public:
 
     CDetailManager();
     virtual ~CDetailManager();
+    private:
+    FrameMode m_requestedFrameMode = FrameMode::Wave1;
+    FrameMode m_frameMode = FrameMode::Wave1;
+    // Кадр, для якого зафіксовано режим трави.
+    u32 m_modeFrameNumber = u32(-1);
+
+    // Один розрахунок вітру на кадр.
+    u32 m_windFrameNumber = u32(-1);
+
+    // Кеш параметрів активної хвилі.
+    Fvector4 m_frameWave;
+    Fvector4 m_frameWind;
+
 };
 } // namespace xray::render::RENDER_NAMESPACE

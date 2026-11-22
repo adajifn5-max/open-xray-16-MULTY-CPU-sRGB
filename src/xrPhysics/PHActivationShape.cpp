@@ -1,5 +1,8 @@
 #include "StdAfx.h"
+#include "xrCore/StutterProfile.h"
+#include <cstdio>
 #include "PHActivationShape.h"
+#include "IPhysicsShellHolder.h"
 
 #include "Physics.h"
 #include "MathUtils.h"
@@ -23,9 +26,57 @@
 namespace detail::activation_shape
 {
 static float max_depth = 0.f;
+static float initial_max_depth = 0.f;
 static float friction_factor = 0.f;
 static const float cfm = 1.e-10f;
 static const float erp = 1.f;
+struct PlacementQueryScope
+{
+    dGeomID previous;
+    explicit PlacementQueryScope(dGeomID geom) : previous(ExchangePlacementQueryGeom(geom)) {}
+    ~PlacementQueryScope() { ExchangePlacementQueryGeom(previous); }
+};
+#if XRAY_ENABLE_STUTTER_TIMERS
+struct ContactSample
+{
+    float depth = 0.f;
+    Fvector position{}, normal{};
+    u16 object = u16(-1);
+    int material1 = 0, material2 = 0;
+    char name[48] = "static";
+};
+struct ContactDiagnostics
+{
+    bool initial = true;
+    u32 initialContacts = 0, solverContacts = 0;
+    ContactSample initialContact, lastContact;
+};
+static thread_local ContactDiagnostics* contactDiagnostics = nullptr;
+struct ContactDiagnosticsScope
+{
+    ContactDiagnostics* previous;
+    explicit ContactDiagnosticsScope(ContactDiagnostics* current) : previous(contactDiagnostics)
+    { contactDiagnostics = current; }
+    ~ContactDiagnosticsScope() { contactDiagnostics = previous; }
+};
+static void NoteContact(bool bo1, const dContact& contact, const SGameMtl* material1, const SGameMtl* material2)
+{
+    if (!contactDiagnostics) return;
+    auto& diagnostics = *contactDiagnostics;
+    if (diagnostics.initial) ++diagnostics.initialContacts;
+    else ++diagnostics.solverContacts;
+    auto& sample = diagnostics.initial ? diagnostics.initialContact : diagnostics.lastContact;
+    if (contact.geom.depth <= sample.depth) return;
+    sample.depth = contact.geom.depth;
+    sample.position.set(contact.geom.pos[0], contact.geom.pos[1], contact.geom.pos[2]);
+    sample.normal.set(contact.geom.normal[0], contact.geom.normal[1], contact.geom.normal[2]);
+    sample.material1 = material1->GetID();
+    sample.material2 = material2->GetID();
+    auto* other = retrieveRefObject(bo1 ? contact.geom.g2 : contact.geom.g1);
+    sample.object = other ? other->ObjectID() : u16(-1);
+    std::snprintf(sample.name, sizeof(sample.name), "%s", other ? other->ObjectName() : "static");
+}
+#endif
 /*
 static	const float static_cfm				=1.e-10f;
 static	const float static_erp				=1.f;
@@ -60,6 +111,9 @@ static void ActivateTestDepthCallback(
     float& depth = c.geom.depth;
     float test_depth = depth;
     save_max(max_depth, test_depth);
+#if XRAY_ENABLE_STUTTER_TIMERS
+    NoteContact(bo1, c, material_1, material_2);
+#endif
     c.surface.mu *= friction_factor;
     c.surface.soft_cfm = cfm;
     c.surface.soft_erp = erp;
@@ -124,6 +178,8 @@ static void ActivateTestDepthCallback(
 
 void StaticEnvironment(bool& do_colide, bool bo1, dContact& c, SGameMtl* material_1, SGameMtl* material_2)
 {
+    if (!do_colide || material_1->Flags.test(SGameMtl::flPassable) || material_2->Flags.test(SGameMtl::flPassable))
+        return;
     dJointID contact_joint = dJointCreateContact(nullptr, ContactGroup, &c);
 
     if (bo1)
@@ -151,6 +207,18 @@ void GetMaxDepthCallback(bool& do_colide, bool bo1, dContact& c, SGameMtl* mater
     float test_depth = depth;
     // save_max(max_depth,test_depth);
     detail::activation_shape::max_depth += test_depth;
+    save_max(detail::activation_shape::initial_max_depth, test_depth);
+#if XRAY_ENABLE_STUTTER_TIMERS
+    detail::activation_shape::NoteContact(bo1, c, material_1, material_2);
+#endif
+}
+
+static void GetMaxDepthWithoutResponse(
+    bool& do_colide, bool bo1, dContact& c, SGameMtl* material_1, SGameMtl* material_2)
+{
+    GetMaxDepthCallback(do_colide, bo1, c, material_1, material_2);
+    // Placement query must not merge islands and wake objects surrounding a spawning NPC.
+    do_colide = false;
 }
 
 void RestoreVelocityState(V_PH_WORLD_STATE& state)
@@ -218,9 +286,41 @@ void CPHActivationShape::Destroy()
     m_body = nullptr;
 }
 bool CPHActivationShape::Activate(
-    const Fvector need_size, u16 steps, float max_displacement, float max_rotation, bool un_freeze_later /*	=false*/)
+    const Fvector need_size, u16 steps, float max_displacement, float max_rotation, bool un_freeze_later /*	=false*/,
+    u16 max_attempts /*=10*/)
 {
     using namespace ::detail::activation_shape;
+
+    if (!steps || !max_attempts || !_valid(need_size) ||
+        need_size.x <= 0.f || need_size.y <= 0.f || need_size.z <= 0.f)
+    {
+        Msg("! [spawn.physics] rejected invalid activation dimensions or iteration count");
+        return false;
+    }
+
+#if XRAY_ENABLE_STUTTER_TIMERS
+    const bool traceSpawn = StutterProfile::InNpcSpawn() && StutterProfile::Enabled(StutterProfile::Category::Phase);
+    StutterProfile::Scope activationScope;
+    auto* owner = retrieveRefObject(m_geom);
+    const u16 ownerId = owner ? owner->ObjectID() : u16(-1);
+    // Keep activation timing, but do not collect or format contact diagnostics for Crab.
+    // Match the stable section name; runtime object IDs change between games.
+    const char* ownerSection = owner ? owner->ObjectNameSect() : nullptr;
+    const bool traceContacts = traceSpawn &&
+        (!ownerSection || xr_strcmp(ownerSection, "zat_b106_stalker_crab") != 0);
+    ContactDiagnostics diagnostics;
+    ContactDiagnosticsScope diagnosticsScope(traceContacts ? &diagnostics : nullptr);
+    const u16 worldObjects = traceContacts ? ph_world->ObjectsNumber() : 0;
+    u16 peakObjects = 0;
+    if (traceSpawn)
+    {
+        activationScope.Begin(StutterProfile::Category::Phase, "spawn.physics.activate", "collision activation",
+            ownerId);
+        // Retain every activation, including short/failed ones, for exact call/step counts.
+        activationScope.AsPoint();
+    }
+    u32 traceSteps = 0, traceAttempts = 0;
+#endif
 
 #ifdef DEBUG
     if (debug_output().ph_dbg_draw_mask().test(phDbgDrawDeathActivationBox))
@@ -235,19 +335,33 @@ bool CPHActivationShape::Activate(
     }
 #endif
     VERIFY(m_geom && m_body);
+    const bool isolatedPlacement = m_flags.test(flStaticEnvironment);
+    PlacementQueryScope placementScope(isolatedPlacement ? m_geom : nullptr);
     CPHObject::activate();
     ph_world->Freeze();
     UnFreeze();
     max_depth = 0.f;
+    initial_max_depth = 0.f;
 
-    dGeomUserDataSetObjectContactCallback(m_geom, GetMaxDepthCallback);
+    dGeomUserDataSetObjectContactCallback(m_geom,
+        m_flags.test(flStaticEnvironment) ? GetMaxDepthWithoutResponse : GetMaxDepthCallback);
     // ph_world->Step();
     ph_world->StepTouch();
+#if XRAY_ENABLE_STUTTER_TIMERS
+    const float traceInitialDepth = max_depth;
+    if (traceContacts)
+    {
+        diagnostics.initial = false;
+        peakObjects = ph_world->ObjectsNumber();
+    }
+#endif
     u16 num_it = 15;
     float fnum_it = float(num_it);
     float fnum_steps = float(steps);
     float fnum_steps_r = 1.f / fnum_steps;
-    float resolve_depth = 0.01f;
+    // A spawn probe may keep its authored position with at most 2.5 cm penetration.
+    // Other physics activation retains the original 1 cm criterion.
+    float resolve_depth = isolatedPlacement ? 0.025f : 0.01f;
     float max_vel = max_depth / fnum_it * fnum_steps_r / fixed_step;
     float limit_l_vel = _max(_max(need_size.x, need_size.y), need_size.z) / fnum_it * fnum_steps_r / fixed_step;
 
@@ -275,26 +389,50 @@ bool CPHActivationShape::Activate(
     step_size.sub(need_size, from_size);
     step_size.mul(fnum_steps_r);
     size.set(from_size);
-    bool ret = false;
+    const bool withinTolerance = isolatedPlacement && initial_max_depth <= resolve_depth &&
+        from_size.x == need_size.x && from_size.y == need_size.y && from_size.z == need_size.z;
+    bool ret = withinTolerance;
+    if (withinTolerance) max_depth = initial_max_depth;
     V_PH_WORLD_STATE temp_state;
-    ph_world->GetState(temp_state);
-    for (int m = 0; steps > m; ++m)
+    if (!withinTolerance) ph_world->GetState(temp_state);
+    const Fvector placementOrigin = Position();
+    // Spawn is a local placement check, not a search through furniture or walls.
+    // Keep the legacy recovery/ragdoll solver unchanged.
+    constexpr float maxSpawnDisplacement = 0.025f;
+    bool displacementRejected = false;
+    for (int m = 0; !withinTolerance && !displacementRejected && steps > m; ++m)
     {
         // float param =fnum_steps_r*(1+m);
         // InterpolateBox(id,param);
         size.add(step_size);
         dGeomBoxSetLengths(m_geom, size.x, size.y, size.z);
-        u16 attempts = 10;
+        u16 attempts = max_attempts;
         do
         {
+#if XRAY_ENABLE_STUTTER_TIMERS
+            if (traceSpawn) ++traceAttempts;
+#endif
             ret = false;
             for (int i = 0; num_it > i; ++i)
             {
                 max_depth = 0.f;
+#if XRAY_ENABLE_STUTTER_TIMERS
+                if (traceSpawn) ++traceSteps;
+                if (traceContacts) diagnostics.lastContact = ContactSample{};
+#endif
                 ph_world->Step();
+#if XRAY_ENABLE_STUTTER_TIMERS
+                if (traceContacts) peakObjects = _max(peakObjects, ph_world->ObjectsNumber());
+#endif
                 CHECK_POS(Position(), "pos after ph_world->Step()", false);
                 ph_world->CutVelocity(max_vel, max_a_vel);
                 CHECK_POS(Position(), "pos after CutVelocity", true);
+                if (isolatedPlacement &&
+                    Position().distance_to_sqr(placementOrigin) > maxSpawnDisplacement * maxSpawnDisplacement)
+                {
+                    displacementRejected = true;
+                    break;
+                }
                 // if(m==0&&i==0)ph_world->GetState(temp_state);
                 if (max_depth < resolve_depth)
                 {
@@ -303,7 +441,7 @@ bool CPHActivationShape::Activate(
                 }
             }
             attempts--;
-        } while (!ret && attempts > 0);
+        } while (!ret && !displacementRejected && attempts > 0);
 #ifdef DEBUG
 //		Msg("correction attempts %d",10-attempts);
 #endif
@@ -323,6 +461,45 @@ bool CPHActivationShape::Activate(
         v.mul(0.5f);
         debug_output().DBG_DrawOBB(M, v, color_xrgb(0, 255, 255));
         debug_output().DBG_ClosedCashedDraw(30000);
+    }
+#endif
+#if XRAY_ENABLE_STUTTER_TIMERS
+    if (traceSpawn)
+    {
+        char detail[96];
+        std::snprintf(detail, sizeof(detail), "steps=%u attempts=%u initial_depth=%.6g final_depth=%.6g ok=%u",
+            traceSteps, traceAttempts, double(traceInitialDepth), double(max_depth), unsigned(ret));
+        activationScope.SetDetail(detail);
+        if (traceContacts)
+        {
+            StutterProfile::Scope counts;
+            std::snprintf(detail, sizeof(detail), "initial=%u solver=%u world=%u peak_active=%u limit=%u",
+                diagnostics.initialContacts, diagnostics.solverContacts, unsigned(worldObjects), unsigned(peakObjects),
+                unsigned(max_attempts));
+            counts.Begin(StutterProfile::Category::Phase, "spawn.physics.contacts", detail, ownerId);
+            counts.AsPoint();
+            if (!ret)
+            {
+                const ContactSample* samples[] = {&diagnostics.initialContact, &diagnostics.lastContact};
+                const char* names[] = {"spawn.contact.initial", "spawn.contact.final"};
+                for (unsigned i = 0; i < 2; ++i)
+                {
+                    const auto& sample = *samples[i];
+                    if (sample.depth <= 0.f) continue;
+                    StutterProfile::Scope contact, normal, other;
+                    std::snprintf(detail, sizeof(detail), "xyz=%.9g,%.9g,%.9g depth=%.6g", double(sample.position.x),
+                        double(sample.position.y), double(sample.position.z), double(sample.depth));
+                    contact.Begin(StutterProfile::Category::Phase, names[i], detail, ownerId, sample.object);
+                    contact.AsPoint();
+                    std::snprintf(detail, sizeof(detail), "normal=%.6g,%.6g,%.6g materials=%d,%d", double(sample.normal.x),
+                        double(sample.normal.y), double(sample.normal.z), sample.material1, sample.material2);
+                    normal.Begin(StutterProfile::Category::Phase, "spawn.contact.normal", detail, ownerId, sample.object);
+                    normal.AsPoint();
+                    other.Begin(StutterProfile::Category::Phase, "spawn.contact.object", sample.name, ownerId, sample.object);
+                    other.AsPoint();
+                }
+            }
+        }
     }
 #endif
     return ret;

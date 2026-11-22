@@ -282,6 +282,8 @@ public:
     virtual void net_MigrateInactive(NET_Packet& packet) = 0;
     virtual void net_MigrateActive(NET_Packet& packet) = 0;
     virtual void net_Relcase(IGameObject* obj) = 0; // destroy all links to another objects
+    // Conservative batch hint: true only when every relcase call is a no-op.
+    virtual bool can_skip_net_relcase() { return false; }
     virtual void save(NET_Packet& packet) = 0;
     virtual void load(IReader& reader) = 0;
     virtual void OnEvent(NET_Packet& packet, u16 type) = 0;

@@ -3,6 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "pch_script.h"
+#include "xrCore/StutterProfile.h"
 #include "ai_debug.h"
 #include "CustomMonster.h"
 #include "ai_space.h"
@@ -424,7 +425,11 @@ void CCustomMonster::net_update::lerp(CCustomMonster::net_update& A, CCustomMons
     fHealth = A.fHealth * (1.f - f) + B.fHealth * f;
 }
 
-void CCustomMonster::update_sound_player() { sound().update(client_update_fdelta()); }
+void CCustomMonster::update_sound_player()
+{
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CCustomMonster::update_sound_player");
+    sound().update(client_update_fdelta());
+}
 void CCustomMonster::UpdateCL()
 {
     START_PROFILE("CustomMonster/client_update")
@@ -664,6 +669,7 @@ void CCustomMonster::eye_pp_s2()
 
 void CCustomMonster::Exec_Visibility()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CCustomMonster::Exec_Visibility");
     // if (0==Sector())				return;
     if (!g_Alive())
         return;

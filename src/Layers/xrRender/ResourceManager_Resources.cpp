@@ -168,7 +168,7 @@ void	CResourceManager::_DeleteRTC(const CRTC* RT)
 }
 */
 
-SGeometry* CResourceManager::CreateGeom(const VertexElement* decl, VertexBufferHandle vb, IndexBufferHandle ib)
+SGeometry* CResourceManager::CreateGeom(const VertexElement* decl, VertexBufferHandle vb, IndexBufferHandle ib, u32 indexStride)
 {
     R_ASSERT(decl && vb);
 
@@ -179,7 +179,7 @@ SGeometry* CResourceManager::CreateGeom(const VertexElement* decl, VertexBufferH
     for (SGeometry* geom : v_geoms)
     {
         SGeometry& G = *geom;
-        if (G.dcl == dcl && G.vb == vb && G.ib == ib && G.vb_stride == vb_stride)
+        if (G.dcl == dcl && G.vb == vb && G.ib == ib && G.vb_stride == vb_stride && G.ib_stride == indexStride)
             return geom;
     }
 
@@ -189,16 +189,17 @@ SGeometry* CResourceManager::CreateGeom(const VertexElement* decl, VertexBufferH
     Geom->vb = vb;
     Geom->vb_stride = vb_stride;
     Geom->ib = ib;
+    Geom->ib_stride = indexStride;
 
     return Geom;
 }
 
-SGeometry* CResourceManager::CreateGeom(u32 FVF, VertexBufferHandle vb, IndexBufferHandle ib)
+SGeometry* CResourceManager::CreateGeom(u32 FVF, VertexBufferHandle vb, IndexBufferHandle ib, u32 indexStride)
 {
     thread_local xr_vector<VertexElement> decl;
     [[maybe_unused]] const bool result = ::FVF::CreateDeclFromFVF(FVF, decl);
     VERIFY(result);
-    SGeometry* g = CreateGeom(decl.data(), vb, ib);
+    SGeometry* g = CreateGeom(decl.data(), vb, ib, indexStride);
     return g;
 }
 

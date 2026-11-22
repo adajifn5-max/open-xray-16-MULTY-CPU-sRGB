@@ -50,17 +50,29 @@ void ActivateShapePhysShellHolder(
 }
 
 bool ActivateShapeCharacterPhysicsSupport(Fvector& out_pos, const Fvector& vbox, const Fvector& activation_pos,
-    const Fmatrix& mXFORM, bool not_collide_characters, bool set_rotation, IPhysicsShellHolder* m_EntityAlife)
+    const Fmatrix& mXFORM, bool not_collide_characters, bool set_rotation, IPhysicsShellHolder* m_EntityAlife,
+    u16 correction_attempts)
 {
+    if (!_valid(activation_pos) || !_valid(vbox) || vbox.x <= 0.f || vbox.y <= 0.f || vbox.z <= 0.f ||
+        !correction_attempts)
+    {
+        out_pos.set(activation_pos);
+        Msg("! [spawn.physics] rejected invalid correction input");
+        return false;
+    }
     CPHActivationShape activation_shape;
-    activation_shape.Create(activation_pos, vbox, m_EntityAlife);
+    // Resolve a bounded stalker spawn against fixed obstacles instead of pushing nearby bodies.
+    // The initial contact query also uses this flag to avoid waking/merging their islands.
+    const bool boundedSpawn = correction_attempts == 1 && m_EntityAlife->IsStalker();
+    activation_shape.Create(activation_pos, vbox, m_EntityAlife, CPHActivationShape::etBox,
+        boundedSpawn ? CPHActivationShape::flStaticEnvironment : 0);
     if (not_collide_characters)
     {
         CPHCollideValidator::SetCharacterClassNotCollide(activation_shape);
     }
     if (set_rotation)
         activation_shape.set_rotation(mXFORM);
-    bool ret = activation_shape.Activate(vbox, 1, 1.f, float(M_PI) / 8.f);
+    bool ret = activation_shape.Activate(vbox, 1, 1.f, float(M_PI) / 8.f, false, correction_attempts);
     out_pos.set(activation_shape.Position());
     activation_shape.Destroy();
     return ret;

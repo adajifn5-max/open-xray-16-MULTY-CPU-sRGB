@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #include "IGame_Level.h"
 #include "IGame_Persistent.h"
 
@@ -299,55 +300,509 @@ void CObjectList::Update(bool bForce)
     }
 
     // Destroy
+
     if (!destroy_queue.empty())
+{
+    // The actual relcase/delete path, including the no-op filter, is enabled
+    // in every configuration. Only diagnostic work is compiled under DEBUG.
+    const size_t queueSize = destroy_queue.size();
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    ZoneScopedN("net_Relcase");
+    CTimer tTotal, tPhase;
+    tTotal.Start();
+    const u32 callsPerReceiver = (u32)queueSize;
+
+    // ---------------------------------------------------------
+    // RELCASE PROFILING STRUCTURES
+    // ---------------------------------------------------------
+
+    struct RelcaseStat
     {
-        ZoneScopedN("net_Relcase");
+        u32 receivers;
+        u32 calls;
+        u32 skippedReceivers{};
+        u32 skippedCalls{};
 
-        // Info
-        for (Objects::iterator oit = objects_active.begin(); oit != objects_active.end(); ++oit)
-            for (int it = destroy_queue.size() - 1; it >= 0; it--)
-            {
-                (*oit)->net_Relcase(destroy_queue[it]);
-            }
-        for (Objects::iterator oit = objects_sleeping.begin(); oit != objects_sleeping.end(); ++oit)
-            for (int it = destroy_queue.size() - 1; it >= 0; it--)
-                (*oit)->net_Relcase(destroy_queue[it]);
+        u32 activeReceivers;
+        u32 sleepingReceivers;
 
-        for (int it = destroy_queue.size() - 1; it >= 0; it--)
-            g_pGameLevel->Sound->object_relcase(destroy_queue[it]);
+        u32 slowReceivers;
 
-        RELCASE_CALLBACK_VEC::iterator it = m_relcase_callbacks.begin();
-        const RELCASE_CALLBACK_VEC::iterator ite = m_relcase_callbacks.end();
-        for (; it != ite; ++it)
+        float totalMs;
+        float activeMs;
+        float sleepingMs;
+
+        float maxReceiverMs;
+        u32 maxObjectId;
+        xr_string maxObjectName;
+
+        RelcaseStat()
+            : receivers(0),
+              calls(0),
+              activeReceivers(0),
+              sleepingReceivers(0),
+              slowReceivers(0),
+              totalMs(0.f),
+              activeMs(0.f),
+              sleepingMs(0.f),
+              maxReceiverMs(0.f),
+              maxObjectId(0)
+        {}
+    };
+
+    struct RelcaseSlowInfo
+    {
+        u32 id;
+        float timeMs;
+        bool active;
+
+        xr_string name;
+        xr_string sect;
+
+        RelcaseSlowInfo()
+            : id(0),
+              timeMs(0.f),
+              active(false)
+        {}
+    };
+
+    xr_map<xr_string, RelcaseStat> relStat;
+    xr_vector<RelcaseSlowInfo> relcaseSlow;
+
+    u32 relcaseReceivers = 0;
+    u32 relcaseCalls = 0;
+    u32 relcaseSkippedReceivers = 0;
+    u32 relcaseSkippedCalls = 0;
+
+    float relcaseCallTimeMs = 0.f;
+#endif // DEBUG
+
+    // ---------------------------------------------------------
+    // RELCASE
+    // ---------------------------------------------------------
+
+    auto relcaseAll = [&](Objects& list, [[maybe_unused]] bool activeList)
+    {
+        for (auto oit = list.begin(); oit != list.end(); ++oit)
         {
-            VERIFY(*(*it).m_ID == (it - m_relcase_callbacks.begin()));
-            for (auto& dit : destroy_queue)
-            {
-                (*it).m_Callback(dit);
-            }
-        }
+            IGameObject* receiver = *oit;
 
-        // Notify HUD once per destroyed object:
+            // Check once per receiver/batch, before touching any destroyed
+            // object's Lua wrapper. Native cleanup and real Lua handlers keep
+            // the original call order; only verified no-op receivers are skipped.
+            if (receiver->can_skip_net_relcase())
+            {
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+                ++relcaseSkippedReceivers;
+                relcaseSkippedCalls += callsPerReceiver;
+                auto& skipped = relStat[receiver->cNameSect().c_str()];
+                ++skipped.skippedReceivers;
+                skipped.skippedCalls += callsPerReceiver;
+#endif
+                continue;
+            }
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+            // Measure only net_Relcase calls.
+            CTimer tReceiver;
+            tReceiver.Start();
+#endif // DEBUG
+
+            {
+                // One timer per receiver batch, not per receiver/destroyed pair.
+                XR_STUTTER_DISABLED_SCOPE(Relcase, "net_Relcase.receiver_batch",
+                    receiver->cNameSect().c_str(), receiver->ID(), queueSize);
+                for (size_t it = queueSize; it > 0; --it)
+                {
+                    receiver->net_Relcase(destroy_queue[it - 1]);
+                }
+            }
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+            const float msReceiver =
+                tReceiver.GetElapsed_sec() * 1000.f;
+
+            // Total time of measured receiver loops.
+            relcaseCallTimeMs += msReceiver;
+
+            ++relcaseReceivers;
+            relcaseCalls += callsPerReceiver;
+
+            // -------------------------------------------------
+            // SECTION STATISTICS
+            // -------------------------------------------------
+
+            const char* name = receiver->cName().c_str();
+            const char* sect = receiver->cNameSect().c_str();
+
+            auto& s = relStat[sect];
+
+            ++s.receivers;
+            s.calls += callsPerReceiver;
+            s.totalMs += msReceiver;
+
+            if (activeList)
+            {
+                ++s.activeReceivers;
+                s.activeMs += msReceiver;
+            }
+            else
+            {
+                ++s.sleepingReceivers;
+                s.sleepingMs += msReceiver;
+            }
+
+            // Find the slowest receiver in this section.
+            if (msReceiver > s.maxReceiverMs)
+            {
+                s.maxReceiverMs = msReceiver;
+                s.maxObjectId = receiver->ID();
+                s.maxObjectName = name;
+            }
+
+            // -------------------------------------------------
+            // SLOW RECEIVERS
+            // -------------------------------------------------
+
+            if (msReceiver > 1.f)
+            {
+                ++s.slowReceivers;
+
+                // Defer Msg() until after timing the whole phase.
+                RelcaseSlowInfo info;
+
+                info.id = receiver->ID();
+                info.name = name;
+                info.sect = sect;
+                info.timeMs = msReceiver;
+                info.active = activeList;
+
+                relcaseSlow.push_back(info);
+            }
+#endif // DEBUG
+        }
+    };
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    // Measure actual relcase phase wall time.
+    CTimer tRelcaseWall;
+    tRelcaseWall.Start();
+#endif // DEBUG
+
+    {
+        XR_STUTTER_DISABLED_SCOPE(Relcase, "net_Relcase.all_receivers", "", 0, queueSize);
+        relcaseAll(objects_active, true);
+        relcaseAll(objects_sleeping, false);
+    }
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    const float msObjRelcase =
+        tRelcaseWall.GetElapsed_sec() * 1000.f;
+
+    // Difference between wall time and measured receiver loops.
+    float msRelcaseProfileExtra =
+        msObjRelcase - relcaseCallTimeMs;
+
+    if (msRelcaseProfileExtra < 0.f)
+        msRelcaseProfileExtra = 0.f;
+
+    // ---------------------------------------------------------
+    // RELCASE SLOW LOG
+    // ---------------------------------------------------------
+    #if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    for (const auto& info : relcaseSlow)
+  
+    {
+        Msg(
+            "RELCASE_SLOW frame=%u list=%s "
+            "id=%u name=%s sect=%s time=%.2f ms calls=%u",
+            Device.dwFrame,
+            info.active ? "active" : "sleeping",
+            info.id,
+            info.name.c_str(),
+            info.sect.c_str(),
+            info.timeMs,
+            callsPerReceiver
+        );
+        
+    }
+    #endif // DEBUG
+
+
+    // ---------------------------------------------------------
+    // RELCASE SECTION STATISTICS
+    // ---------------------------------------------------------
+
+    // Emitted below after sampling total time, outside the measured phases.
+
+#endif // DEBUG
+    // ---------------------------------------------------------
+    // SOUND RELCASE
+    // ---------------------------------------------------------
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    tPhase.Start();
+#endif // DEBUG
+
+    for (size_t it = queueSize; it > 0; --it)
+    {
+        g_pGameLevel->Sound->object_relcase(destroy_queue[it - 1]);
+    }
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    const float msSound =
+        tPhase.GetElapsed_sec() * 1000.f;
+#endif // DEBUG
+
+    // ---------------------------------------------------------
+    // RELCASE CALLBACKS
+    // ---------------------------------------------------------
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    tPhase.Start();
+#endif // DEBUG
+
+    RELCASE_CALLBACK_VEC::iterator it =
+        m_relcase_callbacks.begin();
+
+    const RELCASE_CALLBACK_VEC::iterator ite =
+        m_relcase_callbacks.end();
+
+    for (; it != ite; ++it)
+    {
+        VERIFY(*(*it).m_ID == (it - m_relcase_callbacks.begin()));
+
         for (auto& dit : destroy_queue)
         {
-            g_pGameLevel->pHUD->net_Relcase(dit);
+            (*it).m_Callback(dit);
         }
-
-        // Destroy
-        for (int it = destroy_queue.size() - 1; it >= 0; it--)
-        {
-            IGameObject* O = destroy_queue[it];
-// Msg ("Object [%x]", O);
-#ifdef DEBUG
-            if (debug_destroy)
-                Msg("Destroying object[%x][%x] [%d][%s] frame[%d]", dynamic_cast<void*>(O), O, O->ID(), O->cName().c_str(),
-                    Device.dwFrame);
-#endif // DEBUG
-            O->net_Destroy();
-            Destroy(O);
-        }
-        destroy_queue.clear();
     }
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    const float msCallbacks =
+        tPhase.GetElapsed_sec() * 1000.f;
+#endif // DEBUG
+
+    // ---------------------------------------------------------
+    // HUD RELCASE
+    // ---------------------------------------------------------
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    tPhase.Start();
+#endif // DEBUG
+
+    for (auto& dit : destroy_queue)
+    {
+        g_pGameLevel->pHUD->net_Relcase(dit);
+    }
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    const float msHud =
+        tPhase.GetElapsed_sec() * 1000.f;
+#endif // DEBUG
+
+    // ---------------------------------------------------------
+    // DESTROY OBJECTS
+    // ---------------------------------------------------------
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    tPhase.Start();
+#endif // DEBUG
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    float msDestroyObjects = 0.f;
+    float msNetDestroyTotal = 0.f;
+    float msDeleteTotal = 0.f;
+#endif // DEBUG
+
+    for (size_t it = queueSize; it > 0; --it)
+    {
+        IGameObject* O = destroy_queue[it - 1];
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+        if (debug_destroy)
+        {
+            Msg(
+                "Destroying object[%x][%x] [%d][%s] frame[%d]",
+                dynamic_cast<void*>(O),
+                O,
+                O->ID(),
+                O->cName().c_str(),
+                Device.dwFrame
+            );
+        }
+#endif // DEBUG
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+        // Save information before destruction.
+        string256 nm, sect;
+
+        xr_strcpy(nm, O->cName().c_str());
+        xr_strcpy(sect, O->cNameSect().c_str());
+
+        const u32 id = O->ID();
+
+        CTimer tObj;
+        tObj.Start();
+
+        CTimer tNet;
+        tNet.Start();
+
+#endif // DEBUG
+        O->net_Destroy();
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+        const float msNet =
+            tNet.GetElapsed_sec() * 1000.f;
+
+        CTimer tDel;
+        tDel.Start();
+
+#endif // DEBUG
+        Destroy(O);
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+        const float msDel =
+            tDel.GetElapsed_sec() * 1000.f;
+
+        const float msObj =
+            tObj.GetElapsed_sec() * 1000.f;
+
+        msNetDestroyTotal += msNet;
+        msDeleteTotal += msDel;
+        msDestroyObjects += msObj;
+
+        if (msObj > 0.5f)
+        {
+            /*Msg(
+                //"DESTROY_SLOW frame=%u "
+                "id=%u name=%s sect=%s "
+                "time=%.2f "
+                "net_Destroy=%.2f "
+                "Destroy=%.2f ms",
+
+                Device.dwFrame,
+                id,
+                nm,
+                sect,
+                msObj,
+                msNet,
+                msDel
+            );*/
+        }
+#endif // DEBUG
+    }
+
+#if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    const float msDestroy =
+        tPhase.GetElapsed_sec() * 1000.f;
+
+    float msDestroyProfileExtra =
+        msDestroy - msDestroyObjects;
+
+    if (msDestroyProfileExtra < 0.f)
+        msDestroyProfileExtra = 0.f;
+
+    // ---------------------------------------------------------
+    // TOTAL STATISTICS
+    // ---------------------------------------------------------
+
+    const float msAll =
+        tTotal.GetElapsed_sec() * 1000.f;
+    #if defined(DEBUG) && XRAY_ENABLE_LEGACY_RELCASE_PROFILE
+    // Report aggregate section costs after all timings have been captured.
+    // Each row includes all receivers in that section, not only slow objects.
+    for (const auto& kv : relStat)
+    {
+        const RelcaseStat& s = kv.second;
+        if (s.totalMs <= 1.f && s.skippedReceivers == 0)
+            continue;
+
+        const float avgReceiverUs = s.receivers ? s.totalMs * 1000.f / s.receivers : 0.f;
+        const float avgCallUs = s.calls ? s.totalMs * 1000.f / s.calls : 0.f;
+        Msg(
+            "RELCASE_SECT frame=%u sect=%s "
+            "receivers=%u calls=%u skipped_receivers=%u skipped_calls=%u total=%.2f ms "
+            "avg_receiver=%.1f us avg_call=%.2f us "
+            "max=%.2f ms max_id=%u max_name=%s slow=%u "
+            "active=%u/%.2fms sleeping=%u/%.2fms",
+            Device.dwFrame,
+            kv.first.c_str(),
+            s.receivers,
+            s.calls,
+            s.skippedReceivers,
+            s.skippedCalls,
+            s.totalMs,
+            avgReceiverUs,
+            avgCallUs,
+            s.maxReceiverMs,
+            s.maxObjectId,
+            s.maxObjectName.c_str(),
+            s.slowReceivers,
+            s.activeReceivers,
+            s.activeMs,
+            s.sleepingReceivers,
+            s.sleepingMs
+        );
+    }
+
+    if (msAll > 2.f)
+    {
+        Msg(
+            "DESTROY_STAT frame=%u "
+            "queue=%u active=%u sleeping=%u | "
+
+            "total=%.2f "
+
+            "objRelcase=%.2f "
+            "relcaseCallTime=%.2f "
+            "relcaseProfileExtra=%.2f "
+            "relcaseReceivers=%u "
+            "relcaseCalls=%u "
+            "relcaseSkippedReceivers=%u relcaseSkippedCalls=%u "
+
+            "sound=%.2f "
+            "callbacks=%.2f "
+            "hud=%.2f "
+
+            "destroy=%.2f "
+            "destroyObjects=%.2f "
+            "net_Destroy=%.2f "
+            "Destroy=%.2f "
+            "destroyProfileExtra=%.2f ms",
+
+            Device.dwFrame,
+
+            (u32)queueSize,
+            (u32)objects_active.size(),
+            (u32)objects_sleeping.size(),
+
+            msAll,
+
+            msObjRelcase,
+            relcaseCallTimeMs,
+            msRelcaseProfileExtra,
+            relcaseReceivers,
+            relcaseCalls,
+            relcaseSkippedReceivers,
+            relcaseSkippedCalls,
+
+            msSound,
+            msCallbacks,
+            msHud,
+
+            msDestroy,
+            msDestroyObjects,
+            msNetDestroyTotal,
+            msDeleteTotal,
+            msDestroyProfileExtra
+        );
+    }
+    #endif // DEBUG
+#endif // DEBUG
+    destroy_queue.clear();
+
+     }
 }
 
 void CObjectList::net_Register(IGameObject* O)

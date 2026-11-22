@@ -92,6 +92,12 @@ CDetailManager::CDetailManager() : xrc("detail manager")
 {
     ZoneScoped;
 
+    if (m_calc_task)
+{
+    TaskScheduler->Wait(*m_calc_task);
+    m_calc_task = nullptr;
+}
+
     dtFS = nullptr;
     dtSlots = nullptr;
     soft_Geom = nullptr;
@@ -135,6 +141,12 @@ CDetailManager::CDetailManager() : xrc("detail manager")
 CDetailManager::~CDetailManager()
 {
     ZoneScoped;
+
+    if (m_calc_task)
+{
+    TaskScheduler->Wait(*m_calc_task);
+    m_calc_task = nullptr;
+}
 
     for (u32 i = 0; i < dm_cache_size; ++i)
         cache_pool[i].~Slot();
@@ -234,13 +246,21 @@ void CDetailManager::Load()
 void CDetailManager::Unload()
 {
     ZoneScoped;
+<<<<<<< HEAD
 
+=======
+    // Visibility calculation accesses models, slots, the VFS and GPU-cache handles.
+    // The destructor is too late: level_Unload calls Unload before deleting us.
+>>>>>>> 0d3597d30 (beckup final 22.11.2026 15:41)
     if (m_calc_task)
     {
         TaskScheduler->Wait(*m_calc_task);
         m_calc_task = nullptr;
     }
+<<<<<<< HEAD
 
+=======
+>>>>>>> 0d3597d30 (beckup final 22.11.2026 15:41)
     if (UseVS())
         hw_Unload();
     else
@@ -264,7 +284,7 @@ extern ECORE_API float r_ssaDISCARD;
 void CDetailManager::UpdateVisibleM()
 {
     ZoneScoped;
-
+    u64 modeCounts[3] = {0, 0, 0};
     for (int i = 0; i != 3; ++i)
         for (auto& vis : m_visibles[i])
             vis.clear();
@@ -310,7 +330,7 @@ void CDetailManager::UpdateVisibleM()
                 //    _mm_prefetch((char*)*MS.slots[_i+1], _MM_HINT_T1);
 
                 // if slot empty - continue
-                if (S.empty)
+                if (S.empty || S.type != stReady)
                 {
                     continue;
                 }
@@ -380,7 +400,7 @@ void CDetailManager::UpdateVisibleM()
                     SlotPart& sp = S.G[sp_id];
                     if (sp.id == DetailSlot::ID_Empty)
                         continue;
-                    if (!sp.r_items[0].empty())
+                   /* if (!sp.r_items[0].empty())
                     {
                         m_visibles[0][sp.id].push_back({ &sp.r_items[0], &S.vis.sphere });
                     }
@@ -391,11 +411,49 @@ void CDetailManager::UpdateVisibleM()
                     if (!sp.r_items[2].empty())
                     {
                         m_visibles[2][sp.id].push_back({ &sp.r_items[2], &S.vis.sphere });
-                    }
+                    }*/
+                
+                for (u32 mode = 0; mode < 3; ++mode)
+{
+    if (sp.r_items[mode].empty())
+        continue;
+
+    m_visibles[mode][sp.id].push_back(
+        { &sp.r_items[mode], &S.vis.sphere });
+
+    modeCounts[mode] +=
+        static_cast<u64>(sp.r_items[mode].size());
+}
+                
                 }
             }
         }
     }
+
+    const u64 total =
+    modeCounts[0] + modeCounts[1] + modeCounts[2];
+
+if (total == 0)
+{
+    m_requestedFrameMode = FrameMode::Still;
+}
+else
+{
+    // Починаємо з попереднього режиму.
+    // За рівності кількостей він збережеться.
+    u32 selected =
+        static_cast<u32>(m_requestedFrameMode);
+
+    for (u32 mode = 0; mode < 3; ++mode)
+    {
+        if (modeCounts[mode] > modeCounts[selected])
+            selected = mode;
+    }
+
+    m_requestedFrameMode =
+        static_cast<FrameMode>(selected);
+}
+
     RImplementation.BasicStats.DetailVisibility.End();
 }
 
@@ -421,7 +479,7 @@ void CDetailManager::Render(CBackend& cmd_list, const Fsphere* bounds)
     RImplementation.BasicStats.DetailRender.Begin();
     g_pGamePersistent->m_pGShaderConstants->m_blender_mode.w = 1.0f; //--#SM+#-- Флаг начала рендера травы [begin of grass render]
 
-#ifndef _EDITOR
+/*#ifndef _EDITOR
     float factor = g_pGamePersistent->Environment().wind_strength_factor;
 #else
     float factor = 0.3f;
@@ -433,7 +491,41 @@ void CDetailManager::Render(CBackend& cmd_list, const Fsphere* bounds)
     if (UseVS())
         hw_Render(cmd_list, bounds);
     else
+        soft_Render(bounds);*/
+
+    const bool useVS = UseVS();
+
+    // Один режим протягом усього кадру.
+    if (m_modeFrameNumber != Device.dwFrame)
+    {
+        m_modeFrameNumber = Device.dwFrame;
+        m_frameMode = m_requestedFrameMode;
+
+        // Still не потребує розрахунку вітру.
+        // Software rendering зберігає стару поведінку.
+        if (!useVS || m_frameMode != FrameMode::Still)
+        {
+#ifndef _EDITOR
+            const float factor =
+                g_pGamePersistent->Environment().wind_strength_factor;
+#else
+            const float factor = 0.3f;
+#endif
+            swing_current.lerp(
+                swing_desc[0],
+                swing_desc[1],
+                factor);
+        }
+    }
+
+    cmd_list.set_CullMode(CULL_NONE);
+    cmd_list.set_xform_world(Fidentity);
+
+    if (useVS)
+        hw_Render(cmd_list, bounds);
+    else
         soft_Render(bounds);
+
     cmd_list.set_CullMode(CULL_CCW);
 
     g_pGamePersistent->m_pGShaderConstants->m_blender_mode.w = 0.0f; //--#SM+#-- Флаг конца рендера травы [end of grass render]
@@ -442,7 +534,12 @@ void CDetailManager::Render(CBackend& cmd_list, const Fsphere* bounds)
 
 void CDetailManager::DispatchMTCalc()
 {
+<<<<<<< HEAD
     R_ASSERT1_CURE(!m_calc_task || m_calc_task->IsFinished(), { return; });
+=======
+    if (m_calc_task && !m_calc_task->IsFinished())
+        return;
+>>>>>>> 0d3597d30 (beckup final 22.11.2026 15:41)
 
     m_calc_task = &TaskScheduler->AddTask([this]
     {

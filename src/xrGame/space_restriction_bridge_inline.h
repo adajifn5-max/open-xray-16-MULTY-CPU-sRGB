@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "spawn_preparation.h"
+
 IC CSpaceRestrictionBridge::CSpaceRestrictionBridge(CSpaceRestrictionBase* object)
 {
     VERIFY(object);
@@ -32,19 +34,8 @@ IC u32 CSpaceRestrictionBridge::accessible_nearest(
     auto& level_graph = ai().level_graph();
 
     float min_dist_sqr = flt_max;
-    u32 selected = u32(-1);
-    xr_vector<u32>::const_iterator I = restriction->accessible_neighbour_border(restriction, out_restriction).begin();
-    xr_vector<u32>::const_iterator E = restriction->accessible_neighbour_border(restriction, out_restriction).end();
-    for (; I != E; ++I)
-    {
-        VERIFY2(level_graph.valid_vertex_id(*I), make_string("%d", *I));
-        float distance_sqr = level_graph.vertex_position(*I).distance_to_sqr(position);
-        if (distance_sqr < min_dist_sqr)
-        {
-            min_dist_sqr = distance_sqr;
-            selected = *I;
-        }
-    }
+    const auto& vertices = restriction->accessible_neighbour_border(restriction, out_restriction);
+    u32 selected = SpawnPreparation::SelectNearestVertex(vertices, position);
     bool selected_vertex_id_is_valid = level_graph.valid_vertex_id(selected);
     VERIFY2(selected_vertex_id_is_valid,
         make_string("vertex_id[%d], object[%s], position[%f][%f][%f]", selected, name().c_str(), VPUSH(position)));

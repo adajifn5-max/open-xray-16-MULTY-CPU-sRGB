@@ -143,8 +143,25 @@ CLevelDebug::CLevelInfo& CLevelDebug::level_info(void* class_ptr, LPCSTR class_n
 
 void CLevelDebug::free_mem()
 {
+    for (auto& object : m_objects_info)
+    {
+        for (auto& class_info : object.second)
+            xr_delete(class_info.second);
+    }
+    m_objects_info.clear();
+
+    // Free text info
+    for (auto& text_info : m_text_info)
+        xr_delete(text_info.second);
+    m_text_info.clear();
+
+    // Free level info
+    for (auto& level_info : m_level_info)
+        xr_delete(level_info.second);
+    m_level_info.clear();
+
     // free object info
-    for (OBJECT_INFO_MAP_IT it_obj = m_objects_info.begin(); it_obj != m_objects_info.end(); ++it_obj)
+    /**for (OBJECT_INFO_MAP_IT it_obj = m_objects_info.begin(); it_obj != m_objects_info.end(); ++it_obj)
     {
         for (CLASS_INFO_MAP_IT it_class = it_obj->second.begin(); it_class != it_obj->second.end(); ++it_class)
         {
@@ -162,13 +179,55 @@ void CLevelDebug::free_mem()
     for (LEVEL_INFO_MAP_IT it = m_level_info.begin(); it != m_level_info.end(); ++it)
     {
         xr_delete(it->second);
-    }
+    }*/
 }
 
 void CLevelDebug::draw_object_info()
 {
+    for (auto it = m_objects_info.begin(); it != m_objects_info.end();)
+    {
+        // Remove invalid objects
+        if (!it->first || it->first->getDestroy())
+        {
+            for (auto& class_info : it->second)
+                xr_delete(class_info.second);
+
+            it = m_objects_info.erase(it);
+            continue;
+        }
+
+        Fmatrix res;
+        res.mul(Device.mFullTransform, it->first->XFORM());
+
+        Fvector4 v_res;
+
+        float delta_height = 0.f;
+
+        for (auto class_it = it->second.begin(); class_it != it->second.end(); ++class_it)
+        {
+            res.transform(v_res, class_it->second->get_shift_pos());
+
+            if (v_res.z < 0 || v_res.w < 0)
+                continue;
+
+            if (v_res.x < -1.f || v_res.x > 1.f ||
+                v_res.y < -1.f || v_res.y > 1.f)
+                continue;
+
+            float x = (1.f + v_res.x) / 2.f * Device.dwWidth;
+            float y = (1.f - v_res.y) / 2.f * Device.dwHeight - delta_height;
+            float start_y = y;
+
+            class_it->second->draw_info(x, y);
+
+            delta_height = start_y - y;
+        }
+
+        ++it;
+
+
     // handle all of the objects
-    for (OBJECT_INFO_MAP_IT it = m_objects_info.begin(); it != m_objects_info.end(); ++it)
+    /*for (OBJECT_INFO_MAP_IT it = m_objects_info.begin(); it != m_objects_info.end(); ++it)
     {
         // если объект невалидный - удалить информацию
         if (!it->first || it->first->getDestroy())
@@ -210,9 +269,9 @@ void CLevelDebug::draw_object_info()
 
             delta_height = start_y - y;
         }
-    }
+    }*/
 }
-
+}
 void CLevelDebug::draw_text()
 {
     // handle all of the classes

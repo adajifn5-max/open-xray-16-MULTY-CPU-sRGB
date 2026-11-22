@@ -1,0 +1,19 @@
+// Forward, opaque alpha-test: no normal/detail maps, gloss, specular,
+// shadow-map filtering, SSAO, deferred lighting, or per-sample shading.
+#include "common.h"
+
+struct foliage_far_in
+{
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD0;
+    float3 light : TEXCOORD1;
+    float fog : TEXCOORD2;
+};
+
+float4 main(foliage_far_in I) : SV_Target
+{
+    float4 base = s_base.Sample(smp_base, I.uv);
+    clip(base.a - def_aref);
+    float3 color = base.rgb * I.light;
+    return float4(lerp(fog_color.rgb, color, I.fog), base.a);
+}

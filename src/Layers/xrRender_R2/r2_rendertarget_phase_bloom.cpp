@@ -186,6 +186,10 @@ void CRenderTarget::phase_bloom()
         float _h = BLOOM_size_Y;
         float ddw = (1.f / _w) * ps_r2_ls_bloom_kernel_b;
         float ddh = (1.f / _h) * ps_r2_ls_bloom_kernel_b;
+#if defined(USE_DX11)
+        if (RImplementation.o.linear_rendering)
+            ddh *= float(Device.dwWidth) / float(Device.dwHeight);
+#endif
         Fvector2 p0;
         p0.set(.5f / _w, .5f / _h);
         Fvector2 p1;
@@ -408,6 +412,18 @@ void CRenderTarget::phase_bloom()
             Fvector4 a_5 = {half.x, a_4.y - two.y, two.y + a_4.z, half.x}; // -5,+5i
             Fvector4 a_6 = {half.x, a_5.y - two.y, two.y + a_5.z, half.x}; // -6,+6i
             Fvector4 a_7 = {half.x, a_6.y - two.y, two.y + a_6.z, half.x}; // -7,+7i
+#if defined(USE_DX11)
+            if (RImplementation.o.linear_rendering)
+            {
+                // Bloom targets are square; match vertical and horizontal radii in screen pixels.
+                const float screenAspect = float(Device.dwWidth) / float(Device.dwHeight);
+                for (auto* uv : {&a_1, &a_2, &a_3, &a_4, &a_5, &a_6, &a_7})
+                {
+                    uv->y = a_0.y + (uv->y - a_0.y) * screenAspect;
+                    uv->z = a_0.z + (uv->z - a_0.z) * screenAspect;
+                }
+            }
+#endif
 
             // Fill vertex buffer
             v_filter* pv = (v_filter*)RImplementation.Vertex.Lock(4, g_bloom_filter->vb_stride, Offset);
@@ -516,6 +532,10 @@ void CRenderTarget::phase_bloom()
             // Perform filtering
             Fvector4 w0, w1;
             float kernel = ps_r2_ls_bloom_kernel_g * float(Device.dwHeight) / float(Device.dwWidth);
+#if defined(USE_DX11)
+            if (RImplementation.o.linear_rendering)
+                kernel = ps_r2_ls_bloom_kernel_g;
+#endif
             CalcGauss_wave(w0, w1, kernel, kernel / 3.f, ps_r2_ls_bloom_kernel_scale);
             u_setrt(RCache, rt_Bloom_1, 0, 0, 0); // No need for ZBuffer at all
             RCache.set_Element(s_bloom->E[2]);

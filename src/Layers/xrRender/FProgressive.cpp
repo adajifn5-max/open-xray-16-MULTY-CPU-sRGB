@@ -38,14 +38,13 @@ void FProgressive::Load(const char* N, IReader* data, u32 dwFlags)
 
     // normal SWI
     destructor<IReader> lods(data->open_chunk(OGF_SWIDATA));
-    nSWI.reserved[0] = lods().r_u32(); // reserved 16 bytes
-    nSWI.reserved[1] = lods().r_u32();
-    nSWI.reserved[2] = lods().r_u32();
-    nSWI.reserved[3] = lods().r_u32();
-    nSWI.count = lods().r_u32();
-    VERIFY(NULL == nSWI.sw);
-    nSWI.sw = xr_alloc<FSlideWindow>(nSWI.count);
-    lods().r(nSWI.sw, nSWI.count * sizeof(FSlideWindow));
+    ReadSlideWindows(lods(), nSWI);
+    for (u32 i = 0; i < nSWI.count; ++i)
+    {
+        const auto& sw = nSWI.sw[i];
+        R_ASSERT2(sw.num_verts <= vCount && u64(sw.offset) + u64(sw.num_tris) * 3 <= iCount,
+            "Progressive mesh slide-window exceeds geometry");
+    }
 
 // fast
 #if RENDER != R_R1
@@ -55,14 +54,7 @@ void FProgressive::Load(const char* N, IReader* data, u32 dwFlags)
         destructor<IReader> def(geomdef().open_chunk(OGF_SWIDATA));
 
         xSWI = xr_new<FSlideWindowItem>();
-        xSWI->reserved[0] = def().r_u32(); // reserved 16 bytes
-        xSWI->reserved[1] = def().r_u32();
-        xSWI->reserved[2] = def().r_u32();
-        xSWI->reserved[3] = def().r_u32();
-        xSWI->count = def().r_u32();
-        VERIFY(NULL == xSWI->sw);
-        xSWI->sw = xr_alloc<FSlideWindow>(xSWI->count);
-        def().r(xSWI->sw, xSWI->count * sizeof(FSlideWindow));
+        ReadSlideWindows(def(), *xSWI);
     }
 #endif
 }

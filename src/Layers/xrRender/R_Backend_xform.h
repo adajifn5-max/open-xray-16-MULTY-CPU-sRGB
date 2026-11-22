@@ -20,9 +20,11 @@ public:
     R_constant* c_wv;
     R_constant* c_vp;
     R_constant* c_wvp;
+    R_constant* c_gbuffer_projection;
 
 private:
     bool m_bInvWValid;
+    bool m_bHUDProjection;
 
 public:
     explicit R_xforms(CBackend& cmd_list_in);
@@ -30,6 +32,9 @@ public:
     void set_W(const Fmatrix& m);
     void set_V(const Fmatrix& m);
     void set_P(const Fmatrix& m);
+    void set_hud_projection(bool enabled);
+    bool is_hud_projection() const { return m_bHUDProjection; }
+    void set_c_gbuffer_projection(R_constant* C);
     const Fmatrix& get_W() { return m_w; }
     const Fmatrix& get_V() { return m_v; }
     const Fmatrix& get_P() { return m_p; }
@@ -43,6 +48,7 @@ public:
 
 private:
     void apply_invw();
+    void apply_gbuffer_projection();
 
     CBackend& cmd_list;
 };

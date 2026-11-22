@@ -9,8 +9,8 @@ namespace xray::render::RENDER_NAMESPACE
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 
-int rsDVB_Size = 4096; //Fixed: (bytes_need<=mSize) && vl_Count
-int rsDIB_Size = 512;
+int rsDVB_Size = 4096 * 4; // KiB; shared geometry stream capacity
+int rsDIB_Size = 512 * 4; // KiB
 
 #ifdef XR_PLATFORM_WEB
 constexpr bool DiscardOnEveryLock = true;
@@ -112,6 +112,8 @@ void _IndexStream::Create()
 
     mSize = rsDIB_Size * 1024;
     pIB.Create(mSize);
+    pIB32.Create(size_t(mSize) * 2); // same index capacity with u32 entries
+    mPosition32 = 0;
 
     mPosition = 0;
     mDiscardID = 0;
@@ -122,6 +124,7 @@ void _IndexStream::Create()
 void _IndexStream::Destroy()
 {
     pIB.Release();
+    pIB32.Release();
     _clear();
 }
 
@@ -162,9 +165,33 @@ void _IndexStream::Unlock(u32 RealCount)
 #endif
 }
 
+u32* _IndexStream::Lock32(u32 Count, u32& indexOffset)
+{
+    const u64 bytes = u64(Count) * sizeof(u32);
+    R_ASSERT2(Count && bytes <= GetSize32(), "32-bit index stream request exceeds capacity");
+    const bool discard = DiscardOnEveryLock || u64(mPosition32) + Count >= GetSize32() / sizeof(u32);
+    if (discard)
+        mPosition32 = 0;
+    indexOffset = mPosition32;
+    void* data = pIB32.Map(size_t(mPosition32) * sizeof(u32), size_t(bytes), discard);
+    VERIFY(data);
+    return static_cast<u32*>(data);
+}
+
+void _IndexStream::Unlock32(u32 RealCount)
+{
+    mPosition32 += RealCount;
+#ifdef XR_PLATFORM_WEB
+    pIB32.Unmap(size_t(RealCount) * sizeof(u32));
+#else
+    pIB32.Unmap();
+#endif
+}
+
 void _IndexStream::reset_begin()
 {
     old_pIB = pIB;
+    old_pIB32 = pIB32;
     Destroy();
 }
 void _IndexStream::reset_end()

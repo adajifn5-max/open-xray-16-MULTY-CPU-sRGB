@@ -114,7 +114,7 @@ public:
     void ForceTransform(const Fmatrix& m);
     void set_use_hit_anims(bool v) { m_flags.set(fl_use_hit_anims, (BOOL)v); }
     //////////////////base hierarchi methods///////////////////////////////////////////////////
-    void CreateCharacterSafe();
+    void CreateCharacterSafe(u16 correction_attempts = 10);
     void CreateCharacter();
     bool CollisionCorrectObjPos();
 
@@ -172,7 +172,7 @@ private:
     static void DeathAnimCallback(CBlend* B);
     void CreateIKController();
     void DestroyIKController();
-    bool CollisionCorrectObjPos(const Fvector& start_from, bool character_create = false);
+    bool CollisionCorrectObjPos(const Fvector& start_from, bool character_create = false, u16 correction_attempts = 10);
 
     void FlyTo(const Fvector& disp);
     IC void UpdateDeathAnims();

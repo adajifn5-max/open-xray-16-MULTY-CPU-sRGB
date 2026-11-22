@@ -3,6 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #pragma hdrstop
 
 #include "FBasicVisual.h"
@@ -61,7 +62,10 @@ void dxRender_Visual::Load(const char* N, IReader* data, u32)
         string256 fnT, fnS;
         data->r_stringZ(fnT, sizeof(fnT));
         data->r_stringZ(fnS, sizeof(fnS));
-        shader.create(fnS, fnT);
+        {
+            XR_STUTTER_DISABLED_SCOPE(Phase, "render.shader_create", fnT);
+            shader.create(fnS, fnT);
+        }
     }
 
 // desc

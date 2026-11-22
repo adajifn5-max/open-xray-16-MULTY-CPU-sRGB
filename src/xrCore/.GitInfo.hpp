@@ -1,0 +1,2 @@
+#define GIT_INFO_CURRENT_COMMIT "6feff56b4314dccba4d46bb30bf302f60e67f33b" 
+#define GIT_INFO_CURRENT_BRANCH "dev" 

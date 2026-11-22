@@ -22,11 +22,11 @@ protected:
 
 private:
     template <typename T>
-    void _CollectBoneFacesHW(u16* indices, Fvisual* V, u32 iCount);
+    void _CollectBoneFacesHW(MeshIndexView indices, Fvisual* V, u32 iCount);
 
     template <typename T>
     void _FillVerticesHW(const Fmatrix& view, CSkeletonWallmark& wm, const Fvector& normal, float size,
-        Fvisual* V, u16* indices, CBoneData::FacesVec& faces);
+        Fvisual* V, MeshIndexView indices, CBoneData::FacesVec& faces);
 
 protected:
     virtual void _FillVertices(const Fmatrix& view, CSkeletonWallmark& wm, const Fvector& normal, float size,

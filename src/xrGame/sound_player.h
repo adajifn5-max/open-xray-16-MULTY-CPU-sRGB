@@ -11,6 +11,7 @@
 #include "Random.hpp"
 #include "ai_sounds.h"
 #include "xrCore/Containers/AssociativeVector.hpp"
+#include <memory>
 
 class CSoundPlayer : public CRandom32
 {
@@ -57,11 +58,34 @@ public:
         xr_vector<ref_sound*> m_sounds;
         u32 m_last_sound_id;
 
-        CSoundCollection(const CSoundCollectionParams& params);
+        CSoundCollection(const CSoundCollectionParams& params, const xr_vector<shared_str>& files);
+
+        
+
         ~CSoundCollection();
         IC ref_sound* add(ESoundTypes type, LPCSTR name) const;
         const ref_sound& random(u32 id);
     };
+
+    struct CSoundCollectionEntry
+{
+    CSoundCollectionParams params;
+    xr_vector<shared_str> files; // Names in the existing sound index order; built once.
+    CSoundCollection* collection = nullptr;
+
+    explicit CSoundCollectionEntry(const CSoundCollectionParams& value)
+        : params(value)
+    {}
+
+    ~CSoundCollectionEntry();
+
+    bool ready() const { return collection != nullptr; }
+
+    CSoundCollectionEntry(const CSoundCollectionEntry&) = delete;
+    CSoundCollectionEntry& operator=(const CSoundCollectionEntry&) = delete;
+};
+
+using CollectionHandle = std::shared_ptr<CSoundCollectionEntry>;
 
     struct CSoundSingle : public CSoundParams
     {
@@ -92,8 +116,8 @@ public:
 
     struct CInappropriateSoundPredicate
     {
-        u32 m_sound_mask;
-
+        //u32 m_sound_mask;
+        u32 m_sound_mask = 0;
         CInappropriateSoundPredicate(u32 sound_mask) : m_sound_mask(sound_mask) {}
         bool operator()(CSoundSingle& sound)
         {
@@ -107,15 +131,34 @@ public:
     };
 
 public:
-    typedef std::pair<CSoundCollectionParamsFull, CSoundCollection*> SOUND_COLLECTION;
+    typedef std::pair<CSoundCollectionParamsFull, CollectionHandle>
+    SOUND_COLLECTION;
+    //typedef std::pair<CSoundCollectionParamsFull, CSoundCollection*> SOUND_COLLECTION;
     typedef AssociativeVector<u32, SOUND_COLLECTION> SOUND_COLLECTIONS;
 
 private:
     SOUND_COLLECTIONS m_sounds;
     xr_vector<CSoundSingle> m_playing_sounds;
-    u32 m_sound_mask;
+    u32 m_sound_mask = 0;
     IGameObject* m_object;
     shared_str m_sound_prefix;
+
+    struct SPendingPlay
+{
+    u32 internal_type;
+    u32 max_start_time;
+    u32 min_start_time;
+    u32 max_stop_time;
+    u32 min_stop_time;
+    u32 id;
+    u32 queued_at;
+};
+
+// Черга запитів на відтворення
+xr_vector<SPendingPlay> m_pending_plays;
+
+// Перевірка відкладених звуків
+void update_pending_plays();
 
     IC Fvector compute_sound_point(const CSoundSingle& sound);
     void remove_inappropriate_sounds(u32 sound_mask);

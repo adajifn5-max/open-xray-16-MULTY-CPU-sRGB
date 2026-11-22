@@ -3,11 +3,15 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#if defined(USE_DX11)
+#include "Layers/xrRenderDX11/dx11ColorSpace.h"
+#endif
 #pragma hdrstop
 
 #include "Layers/xrRender/ResourceManager.h"
 #include "Blender_Recorder.h"
 #include "Blender.h"
+#include "ShaderCompileTasks.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -204,6 +208,9 @@ void CBlender_Compile::PassEnd()
 
 void CBlender_Compile::PassSET_Shaders(pcstr _vs, pcstr _ps, pcstr _gs /*= nullptr*/, pcstr _hs /*= nullptr*/, pcstr _ds /*= nullptr*/)
 {
+#if defined(USE_DX11)
+    ShaderCompileTasks::Batch shaderBatch(_vs, _ps, _gs, _hs, _ds);
+#endif
 #if defined(USE_OGL)
     dest.pp = RImplementation.Resources->_CreatePP(_vs, _ps, _gs, _hs, _ds);
     if (GLAD_GL_ARB_separate_shader_objects || !dest.pp->pp)
@@ -443,7 +450,12 @@ u32 CBlender_Compile::SampledImage(pcstr sampler, pcstr image, shared_str textur
         fix_texture_name(name);
 
         ref_texture textureResource = RImplementation.Resources->_CreateTexture(name);
-        passTextures.emplace_back(textureStage, textureResource);
+        u32 bindingStage = textureStage;
+#if defined(USE_DX11)
+        if (RImplementation.o.linear_rendering && texture_color::IsColorBinding(image, dest.ps ? dest.ps->cName.c_str() : nullptr))
+            bindingStage |= texture_color::StageSRGB;
+#endif
+        passTextures.emplace_back(bindingStage, textureResource);
     }
 
     return samplerStage;

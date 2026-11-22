@@ -25,9 +25,139 @@ using namespace ALife;
 
 extern string_path g_last_saved_game;
 
-CALifeStorageManager::~CALifeStorageManager() {}
+extern ENGINE_API bool bShowPauseString;
+
+namespace
+{
+class SavePauseController final : public pureFrame
+{
+    using Clock = std::chrono::steady_clock;
+
+    bool m_ownsPause = false;
+    bool m_registered = false;
+    bool m_previousPauseText = false;
+    unsigned m_saveDepth = 0;
+    Clock::time_point m_resumeAt{};
+
+public:
+    void Begin()
+    {
+        ++m_saveDepth;
+
+        // Nested saves must not start separate pause periods.
+        if (m_saveDepth != 1 || m_ownsPause)
+            return;
+
+        // Preserve an existing user/menu pause.
+        if (Device.Paused())
+            return;
+
+        if (MainMenu() && MainMenu()->IsActive())
+            return;
+
+        const bool oldPauseText = bShowPauseString;
+
+        // Pause simulation only; do not pause audio emitters.
+        Device.Pause(true, true, false, "alife_save");
+
+        if (!Device.Paused())
+            return;
+
+        m_previousPauseText = oldPauseText;
+        m_ownsPause = true;
+
+        // Keep existing save UI; suppress the extra PAUSE label.
+        bShowPauseString = false;
+    }
+
+    void Finish()
+    {
+        if (m_saveDepth == 0)
+            return;
+
+        --m_saveDepth;
+
+        if (m_saveDepth != 0 || !m_ownsPause)
+            return;
+
+        // Full second begins after synchronous save completes.
+        m_resumeAt = Clock::now() + std::chrono::seconds(2);
+
+        if (!m_registered)
+        {
+            m_registered = true;
+            Device.seqFrame.Add(this, REG_PRIORITY_LOW);
+        }
+    }
+
+    void OnFrame() override
+    {
+        if (!m_registered || m_saveDepth != 0)
+            return;
+
+        if (Clock::now() < m_resumeAt)
+            return;
+
+        Stop();
+    }
+
+    void Stop()
+    {
+        if (m_registered)
+        {
+            m_registered = false;
+            Device.seqFrame.Remove(this);
+        }
+
+        if (m_ownsPause)
+        {
+            m_ownsPause = false;
+
+            // Do not unpause a menu opened in the meantime.
+            const bool menuActive =
+                MainMenu() && MainMenu()->IsActive();
+
+            if (Device.Paused() && !menuActive)
+                Device.Pause(false, true, false, "alife_save");
+
+            bShowPauseString = m_previousPauseText;
+        }
+
+        m_saveDepth = 0;
+    }
+};
+
+SavePauseController g_savePause;
+
+class SavePauseScope final
+{
+public:
+    SavePauseScope()
+    {
+        g_savePause.Begin();
+    }
+
+    ~SavePauseScope()
+    {
+        g_savePause.Finish();
+    }
+
+    SavePauseScope(const SavePauseScope&) = delete;
+    SavePauseScope& operator=(const SavePauseScope&) = delete;
+};
+}
+
+
+CALifeStorageManager::~CALifeStorageManager() //{}
+
+{
+    g_savePause.Stop();
+}
+
 void CALifeStorageManager::save(LPCSTR save_name_no_check, bool update_name)
 {
+    SavePauseScope savePause;
+
     pcstr gameSaveExtension = SAVE_EXTENSION;
     if (ShadowOfChernobylMode || ClearSkyMode)
         gameSaveExtension = SAVE_EXTENSION_LEGACY;
@@ -252,6 +382,7 @@ bool CALifeStorageManager::load(LPCSTR save_name_no_check)
 
 void CALifeStorageManager::save(NET_Packet& net_packet)
 {
+    SavePauseScope savePause;
     prepare_objects_for_save();
 
     shared_str game_name;

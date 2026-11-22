@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #ifdef XR_PLATFORM_WEB
 #include "rgl_essl_web.h"
 #endif
@@ -22,6 +23,7 @@ template <typename T>
 static GLuint create_shader(pcstr* buffer, size_t const buffer_size, cpcstr filename,
     T*& result, const GLenum* format)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.shader_hw", filename);
     auto [type, output] = ShaderTypeTraits<T>::CreateHWShader(buffer, buffer_size, result->sh, format, filename);
 
     // Parse constant, texture, sampler binding
@@ -201,6 +203,7 @@ private:
 HRESULT CRender::shader_compile(pcstr name, IReader* fs, pcstr pFunctionName,
     pcstr pTarget, u32 Flags, void*& result)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.shader_compile", name);
     shader_options_holder options;
     shader_name_holder sh_name;
 
@@ -509,13 +512,17 @@ HRESULT CRender::shader_compile(pcstr name, IReader* fs, pcstr pFunctionName,
         string_path shadersFolder;
         FS.update_path(shadersFolder, "$game_shaders$", RImplementation.getShaderPath());
 
-        getFileCrc32(fs, shadersFolder, fileCrc);
+        {
+            XR_STUTTER_DISABLED_SCOPE(Phase, "render.shader_crc", name);
+            getFileCrc32(fs, shadersFolder, fileCrc);
+        }
         fs->seek(0);
     }
 
     GLuint program = 0;
     if (GLAD_GL_ARB_get_program_binary && GLAD_GL_ARB_separate_shader_objects && FS.exist(full_path))
     {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "render.shader_cache", name);
         IReader* file = FS.r_open(full_path);
         if (file->length() > 8)
         {
@@ -556,7 +563,10 @@ HRESULT CRender::shader_compile(pcstr name, IReader* fs, pcstr pFunctionName,
 #endif
         // Compile sources list
         shader_sources_manager sources;
-        sources.compile(fs, options);
+        {
+            XR_STUTTER_DISABLED_SCOPE(Phase, "render.shader_sources", name);
+            sources.compile(fs, options);
+        }
 
         // Compile the shader from sources
 #ifdef XR_PLATFORM_WEB
@@ -567,7 +577,10 @@ HRESULT CRender::shader_compile(pcstr name, IReader* fs, pcstr pFunctionName,
         pcstr esslSource = essl.c_str();
         program = create_shader(pTarget, &esslSource, 1, filename, result, nullptr);
 #else
-        program = create_shader(pTarget, sources.get(), sources.length(), filename, result, nullptr);
+        {
+            XR_STUTTER_DISABLED_SCOPE(Phase, "render.shader_driver_compile", name);
+            program = create_shader(pTarget, sources.get(), sources.length(), filename, result, nullptr);
+        }
 #endif
 
         if (GLAD_GL_ARB_get_program_binary && GLAD_GL_ARB_separate_shader_objects && program)

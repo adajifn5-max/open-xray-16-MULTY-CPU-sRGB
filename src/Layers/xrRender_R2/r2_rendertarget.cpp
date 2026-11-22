@@ -210,7 +210,13 @@ CRenderTarget::CRenderTarget()
     RImplementation.o.rain_smapsize = ps_r3_dyn_wet_surf_sm_res;
 
     const auto& options = RImplementation.o;
-
+    Msg("[R4_COLOR] mrtmixdepth=%d fp16_blend=%d "
+    "gbuffer_opt=%d msaa=%d advancedpp=%d",
+    int(options.mrtmixdepth),
+    int(options.fp16_blend),
+    int(options.gbuffer_opt),
+    int(options.msaa),
+    int(options.advancedpp));
     const u32 SampleCount  = options.msaa ? options.msaa_samples : 1u;
     const u32 BoundSamples = options.msaa_opt ? 1u : options.msaa_samples;
 
@@ -274,11 +280,12 @@ CRenderTarget::CRenderTarget()
         if (!options.gbuffer_opt)
             rt_Normal.create(r2_RT_N, w, h, D3DFMT_A16B16G16R16F, SampleCount);
 
+        const auto sceneColorFormat = options.linear_rendering ? D3DFMT_A16B16G16R16F : D3DFMT_A8R8G8B8;
         // select albedo & accum
         if (options.mrtmixdepth)
         {
             // NV50
-            rt_Color.create(r2_RT_albedo, w, h, D3DFMT_A8R8G8B8, SampleCount);
+            rt_Color.create(r2_RT_albedo, w, h, sceneColorFormat, SampleCount);
             rt_Accumulator.create(r2_RT_accum, w, h, D3DFMT_A16B16G16R16F, SampleCount);
         }
         else
@@ -294,7 +301,7 @@ CRenderTarget::CRenderTarget()
                 }
                 else
                 {
-                    rt_Color.create(r2_RT_albedo, w, h, D3DFMT_A8R8G8B8, SampleCount); // expand to full
+                    rt_Color.create(r2_RT_albedo, w, h, sceneColorFormat, SampleCount); // expand to full
                     rt_Accumulator.create(r2_RT_accum, w, h, D3DFMT_A16B16G16R16F, SampleCount);
                 }
             }
@@ -302,16 +309,16 @@ CRenderTarget::CRenderTarget()
             {
                 // R4xx, no-fp-blend,-> albedo_wo
                 VERIFY(options.albedo_wo);
-                rt_Color.create(r2_RT_albedo, w, h, D3DFMT_A8R8G8B8, SampleCount); // normal
+                rt_Color.create(r2_RT_albedo, w, h, sceneColorFormat, SampleCount); // normal
                 rt_Accumulator.create(r2_RT_accum, w, h, D3DFMT_A16B16G16R16F, SampleCount);
                 rt_Accumulator_temp.create(r2_RT_accum_temp, w, h, D3DFMT_A16B16G16R16F, SampleCount);
             }
         }
 
         // generic(LDR) RTs
-        rt_Generic_0.create(r2_RT_generic0, w, h, D3DFMT_A8R8G8B8, 1);
-        rt_Generic_1.create(r2_RT_generic1, w, h, D3DFMT_A8R8G8B8, 1);
-        rt_Generic.create(r2_RT_generic, w, h, D3DFMT_A8R8G8B8, 1);
+        rt_Generic_0.create(r2_RT_generic0, w, h, sceneColorFormat, 1);
+        rt_Generic_1.create(r2_RT_generic1, w, h, sceneColorFormat, 1);
+        rt_Generic.create(r2_RT_generic, w, h, sceneColorFormat, 1);
 #ifdef XR_PLATFORM_WEB
         rt_Forward.create("$user$forward", w, h, D3DFMT_A8R8G8B8, 1);
 #endif
@@ -323,8 +330,8 @@ CRenderTarget::CRenderTarget()
         }
         else
         {
-            rt_Generic_0_r.create(r2_RT_generic0_r, w, h, D3DFMT_A8R8G8B8, SampleCount);
-            rt_Generic_1_r.create(r2_RT_generic1_r, w, h, D3DFMT_A8R8G8B8, SampleCount);
+            rt_Generic_0_r.create(r2_RT_generic0_r, w, h, sceneColorFormat, SampleCount);
+            rt_Generic_1_r.create(r2_RT_generic1_r, w, h, sceneColorFormat, SampleCount);
         }
         //	Igor: for volumetric lights
         // rt_Generic_2.create			(r2_RT_generic2,w,h,D3DFMT_A8R8G8B8		);
@@ -527,7 +534,7 @@ CRenderTarget::CRenderTarget()
 
     // BLOOM
     {
-        D3DFORMAT fmt = D3DFMT_A8R8G8B8; // D3DFMT_X8R8G8B8;
+        D3DFORMAT fmt = options.linear_rendering ? D3DFMT_A16B16G16R16F : D3DFMT_A8R8G8B8; // D3DFMT_X8R8G8B8;
         u32 w = BLOOM_size_X, h = BLOOM_size_Y;
         constexpr u32 fvf_build = D3DFVF_XYZRHW | D3DFVF_TEX4 | D3DFVF_TEXCOORDSIZE2(0) | D3DFVF_TEXCOORDSIZE2(1) |
             D3DFVF_TEXCOORDSIZE2(2) | D3DFVF_TEXCOORDSIZE2(3);
@@ -554,7 +561,7 @@ CRenderTarget::CRenderTarget()
     }
 
     // Check if SSAO Ultra is allowed
-    if (ps_r_ssao_mode != ssao_mode_hdao || !options.ssao_ultra)
+    if (ps_r_ssao_mode != ssao_mode_hdao || !options.ssao_ultra) //check
         ps_r_ssao = _min(ps_r_ssao, 3);
 
     // HBAO

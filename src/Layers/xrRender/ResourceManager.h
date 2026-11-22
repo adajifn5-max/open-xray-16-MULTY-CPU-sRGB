@@ -233,8 +233,8 @@ public:
         v_constant_setup.emplace_back(shared_str(name), s);
     }
 
-    SGeometry* CreateGeom(const VertexElement* decl, VertexBufferHandle vb, IndexBufferHandle ib);
-    SGeometry* CreateGeom(u32 FVF, VertexBufferHandle vb, IndexBufferHandle ib);
+    SGeometry* CreateGeom(const VertexElement* decl, VertexBufferHandle vb, IndexBufferHandle ib, u32 indexStride = sizeof(u16));
+    SGeometry* CreateGeom(u32 FVF, VertexBufferHandle vb, IndexBufferHandle ib, u32 indexStride = sizeof(u16));
 
     void DeleteGeom(const SGeometry* VS);
     void DeferredLoad(BOOL E) { bDeferredLoad = E; }

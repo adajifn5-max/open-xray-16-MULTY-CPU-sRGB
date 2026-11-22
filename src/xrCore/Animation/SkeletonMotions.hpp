@@ -160,7 +160,12 @@ public:
 };
 struct accel_str_pred
 {
+    // Motion lookup frequently probes names that do not exist. Do not intern
+    // each probe in the shared string container just to search a read-only map.
+    using is_transparent = void;
     IC bool operator()(const shared_str& x, const shared_str& y) const { return xr_strcmp(x, y) < 0; }
+    IC bool operator()(const shared_str& x, pcstr y) const { return xr_strcmp(x, y) < 0; }
+    IC bool operator()(pcstr x, const shared_str& y) const { return xr_strcmp(x, y) < 0; }
 };
 typedef xr_map<shared_str, u16, accel_str_pred> accel_map;
 using MotionDefVec = xr_vector<CMotionDef>;

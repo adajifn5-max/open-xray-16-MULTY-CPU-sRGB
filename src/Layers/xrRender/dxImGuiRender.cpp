@@ -45,6 +45,7 @@ void dxImGuiRender::SetState(ImDrawData* data)
 void dxImGuiRender::Frame()
 {
 #if defined(USE_DX11)
+    ImGui_ImplDX11_SetLinearRendering(RImplementation.o.linear_rendering);
     ImGui_ImplDX11_NewFrame();
 #elif defined(USE_OGL)
     ImGui_ImplOpenGL3_NewFrame();

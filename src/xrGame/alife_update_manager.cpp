@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "StdAfx.h"
+#include "xrCore/StutterProfile.h"
 #include "alife_update_manager.h"
 #include "alife_simulator_header.h"
 #include "alife_time_manager.h"
@@ -62,12 +63,16 @@ CALifeUpdateManager::CALifeUpdateManager(IPureServer* server, LPCSTR section)
     m_objects_per_update = pSettings->r_u32(section, "objects_per_update");
     m_changing_level = false;
     m_first_time = true;
+    // After GamePersistent's scheduler (HIGH+1), before normal Level callbacks.
+    Device.seqFrame.Add(this, REG_PRIORITY_HIGH);
 }
 
 CALifeUpdateManager::~CALifeUpdateManager()
 {
+    Device.seqFrame.Remove(this);
     shedule_unregister();
     Device.remove_from_seq_parallel(fastdelegate::FastDelegate0<>(this, &CALifeUpdateManager::update));
+    Device.remove_from_seq_parallel(fastdelegate::FastDelegate0<>(this, &CALifeUpdateManager::continue_scheduled));
 }
 
 float CALifeUpdateManager::shedule_Scale() const
@@ -77,25 +82,64 @@ float CALifeUpdateManager::shedule_Scale() const
 
 void CALifeUpdateManager::update_switch()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CALifeUpdateManager::update_switch");
     init_ef_storage();
 
     START_PROFILE("ALife/switch");
-    graph().level().update(CSwitchPredicate(this), Device.dwPrecacheFrame > 0);
+    {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::graph.level.update", "precache", Device.dwPrecacheFrame);
+        graph().level().update(CSwitchPredicate(this), Device.dwPrecacheFrame > 0);
+    }
     STOP_PROFILE
 }
 
 void CALifeUpdateManager::update_scheduled(bool init_ef)
 {
+    scheduled().request_update();
+    process_scheduled_slice(init_ef);
+}
+
+void CALifeUpdateManager::process_scheduled_slice(bool init_ef)
+{
+    if (m_scheduled_slice_frame == Device.dwFrame || !scheduled().has_pending())
+        return;
+    m_scheduled_slice_frame = Device.dwFrame;
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CALifeUpdateManager::update_scheduled", "init_ef", init_ef ? 1 : 0);
     if (init_ef)
         init_ef_storage();
 
     START_PROFILE("ALife/scheduled");
-    scheduled().update();
+    {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::scheduled.update", "pending_before", scheduled().pending_objects());
+        scheduled().process_pending();
+    }
     STOP_PROFILE
+}
+
+void CALifeUpdateManager::continue_scheduled()
+{
+    if (!initialized() || m_changing_level)
+        return;
+    XR_STUTTER_DISABLED_SCOPE(Phase, "ALife::scheduled.continuation", "pending_before", scheduled().pending_objects());
+    process_scheduled_slice(true);
+}
+
+void CALifeUpdateManager::OnFrame()
+{
+    if (!initialized() || m_first_time || m_changing_level || Device.Paused() || !scheduled().has_pending())
+        return;
+    // A regular ALife update already owns this frame's scheduled slice.
+    if (m_alife_update_frame == Device.dwFrame || m_scheduled_slice_frame == Device.dwFrame)
+        return;
+    if (g_mt_config.test(mtALife))
+        Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CALifeUpdateManager::continue_scheduled));
+    else
+        continue_scheduled();
 }
 
 void CALifeUpdateManager::update()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CALifeUpdateManager::update");
     update_switch();
     update_scheduled(false);
 }
@@ -107,6 +151,7 @@ void CALifeUpdateManager::shedule_Update(u32 dt)
     if (!initialized())
         return;
 
+    m_alife_update_frame = Device.dwFrame;
     if (!m_first_time && g_mt_config.test(mtALife))
     {
         Device.seqParallel.push_back(fastdelegate::FastDelegate0<>(this, &CALifeUpdateManager::update));
@@ -120,9 +165,25 @@ void CALifeUpdateManager::shedule_Update(u32 dt)
     STOP_PROFILE
 }
 
+/*void CALifeUpdateManager::set_process_time(int microseconds)
+{
+    // The graph iterator compares its budget with elapsed time in seconds.
+    const float switchBudgetSeconds = float(microseconds) * (1.f - update_monster_factor()) / 1000000.f;
+    graph().set_process_time(switchBudgetSeconds);
+}*/
+
 void CALifeUpdateManager::set_process_time(int microseconds)
 {
-    graph().set_process_time(float(microseconds) - float(microseconds) * update_monster_factor() / 1000000.f);
+    const float switchBudgetUs =
+        float(microseconds) * (1.f - update_monster_factor());
+
+    constexpr float reductionUs = 5000.f;     // Відняти 5 мс.
+    constexpr float minimumBudgetUs = 1000.f; // Залишити мінімум 1 мс.
+
+    const float switchBudgetSeconds =
+        _max(minimumBudgetUs, switchBudgetUs - reductionUs) / 1000000.f;
+
+    graph().set_process_time(switchBudgetSeconds);
 }
 
 void CALifeUpdateManager::objects_per_update(const u32& objects_per_update)
@@ -275,6 +336,16 @@ void CALifeUpdateManager::load(LPCSTR game_name, bool no_assert, bool new_only)
 void CALifeUpdateManager::reload(LPCSTR section)
 {
     CALifeSimulatorBase::reload(section);
+    float budgetMs = pSettings->line_exist(section, "scheduled_time_budget_ms")
+        ? pSettings->r_float(section, "scheduled_time_budget_ms") : 2.f;
+    if (!_valid(budgetMs) || budgetMs < 0.f)
+    {
+        Msg("! Invalid scheduled_time_budget_ms; using 2 ms");
+        budgetMs = 2.f;
+    }
+   // scheduled().set_time_budget_ms(budgetMs);
+    m_alife_update_frame = u32(-1);
+    m_scheduled_slice_frame = u32(-1);
     set_process_time((int)m_max_process_time);
     objects_per_update(m_objects_per_update);
 }

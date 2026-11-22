@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 
 #include "xrEngine/CustomHUD.h"
 #include "xrCore/Threading/TaskManager.hpp"
@@ -65,6 +66,7 @@ void render_main::render()
 
 void CRender::Calculate()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CRender::Calculate");
     ZoneScopedN("r2_calculate");
 
     // Transfer to global space to avoid deep pointer access

@@ -1,4 +1,6 @@
 #include "StdAfx.h"
+#include "xrCore/StutterProfile.h"
+#include <cstdio>
 
 #include "CharacterPhysicsSupport.h"
 #include "alife_space.h"
@@ -155,6 +157,7 @@ void CCharacterPhysicsSupport::update_interactive_anims()
 
 void CCharacterPhysicsSupport::in_NetSpawn(CSE_Abstract* e)
 {
+    XR_STUTTER_NPC_SCOPE(Phase, "spawn.physics.net_spawn", "physics initialization", m_EntityAlife.ID());
     m_sv_hit = SHit();
     CPHDestroyable::Init(); // this zerows colbacks !!;
     IRenderVisual* pVisual = m_EntityAlife.Visual();
@@ -181,7 +184,10 @@ void CCharacterPhysicsSupport::in_NetSpawn(CSE_Abstract* e)
     pK->CalculateBones(TRUE);
 
     CPHSkeleton::Spawn(e);
-    movement()->EnableCharacter();
+    if (!m_EntityAlife.animation_movement_controlled())
+        movement()->EnableCharacter();
+    else
+        movement()->SetNonInteractive(true);
     movement()->SetPosition(m_EntityAlife.Position());
     movement()->SetVelocity(0, 0, 0);
     if (m_eType != etActor)
@@ -206,12 +212,63 @@ bool CCharacterPhysicsSupport::CollisionCorrectObjPos()
     return CollisionCorrectObjPos(m_EntityAlife.Position(), true);
 }
 
-void CCharacterPhysicsSupport::CreateCharacterSafe()
+void CCharacterPhysicsSupport::CreateCharacterSafe(u16 correction_attempts)
 {
+    XR_STUTTER_NPC_SCOPE(Phase, "spawn.physics.create_character", "create character if absent", m_EntityAlife.ID());
     if (m_PhysicMovementControl->CharacterExist())
         return;
-    CollisionCorrectObjPos(m_EntityAlife.Position(), true);
+    Fvector size;
+    movement()->Box().getsize(size);
+    if (!_valid(m_EntityAlife.Position()) || !_valid(size) ||
+        size.x <= 0.f || size.y <= 0.f || size.z <= 0.f || !correction_attempts)
+    {
+        Msg("! [spawn.physics] rejected invalid character placement: id=%u name=%s", m_EntityAlife.ID(),
+            m_EntityAlife.cName().c_str());
+        return;
+    }
+    const Fvector requestedPosition = m_EntityAlife.Position();
+    // A movement-controlled animation owns the transform; a standing placement box
+    // must not push a seated/lying actor away from that authored transform.
+    const bool animationPlacement = m_eType == etStalker && m_EntityAlife.animation_movement_controlled();
+    const bool corrected = animationPlacement ||
+        CollisionCorrectObjPos(m_EntityAlife.Position(), true, correction_attempts);
+    if (!corrected && correction_attempts == 1)
+    {
+        // Report bounded spawn failures without flooding the log during large spawn batches.
+        static u32 failures = 0;
+        ++failures;
+        if (failures <= 8 || (failures & 255u) == 0)
+        {
+#if XRAY_ENABLE_STUTTER_TIMERS
+            const Fvector& result = m_EntityAlife.Position();
+            Msg("! [spawn.physics] incomplete correction #%u id=%u name=%s requested=(%.9g,%.9g,%.9g) result=(%.9g,%.9g,%.9g); detailed contacts: stutter_profile mask 89",
+                failures, m_EntityAlife.ID(), m_EntityAlife.cName().c_str(), double(requestedPosition.x),
+                double(requestedPosition.y), double(requestedPosition.z), double(result.x), double(result.y), double(result.z));
+#else
+            Msg("! [spawn.physics] incomplete correction #%u id=%u name=%s",
+                failures, m_EntityAlife.ID(), m_EntityAlife.cName().c_str());
+#endif
+        }
+        // An unsuccessful solver result is not a valid new spawn position. In
+        // particular it may have pushed the probe deeper into furniture. Preserve
+        // the authoritative spawn position; ordinary recovery keeps its old policy.
+        m_EntityAlife.Position().set(requestedPosition);
+    }
     CreateCharacter();
+    if (animationPlacement)
+        movement()->SetNonInteractive(true);
+#if XRAY_ENABLE_STUTTER_TIMERS
+    if (StutterProfile::InNpcSpawn() && StutterProfile::Enabled(StutterProfile::Category::Phase))
+    {
+        char detail[96];
+        const Fvector& position = m_EntityAlife.Position();
+        std::snprintf(detail, sizeof(detail), "xyz=%.9g,%.9g,%.9g animation=%u corrected=%u",
+            double(position.x), double(position.y), double(position.z), unsigned(animationPlacement), unsigned(corrected));
+        StutterProfile::Scope ready;
+        ready.Begin(StutterProfile::Category::Phase, "spawn.position.character_ready", detail, m_EntityAlife.ID());
+        ready.AsPoint();
+    }
+#endif
 }
 
 void CCharacterPhysicsSupport::CreateCharacter()
@@ -285,7 +342,9 @@ void CCharacterPhysicsSupport::SpawnCharacterCreate()
 {
     if (HACK_TERRIBLE_DONOT_COLLIDE_ON_SPAWN(m_EntityAlife)) //||  m_EntityAlife.animation_movement_controlled( )
         return;
-    CreateCharacterSafe();
+    // Failed spawn correction retains the authoritative spawn position.
+    // Limit stalker spawn preparation to one solver pass (15 steps); recovery keeps retries.
+    CreateCharacterSafe(m_eType == etStalker ? 1 : 10);
     // if( m_eType != etStalker )
     //	CreateCharacterSafe();
     // VERIFY( movement() );
@@ -669,8 +728,20 @@ bool CCharacterPhysicsSupport::DoCharacterShellCollide()
     return true;
 }
 
-bool CCharacterPhysicsSupport::CollisionCorrectObjPos(const Fvector& start_from, bool character_create /*=false*/)
+bool CCharacterPhysicsSupport::CollisionCorrectObjPos(
+    const Fvector& start_from, bool character_create /*=false*/, u16 correction_attempts /*=10*/)
 {
+#if XRAY_ENABLE_STUTTER_TIMERS
+    const bool traceSpawn = StutterProfile::InNpcSpawn() && StutterProfile::Enabled(StutterProfile::Category::Phase);
+    StutterProfile::Scope correctionScope;
+    if (traceSpawn)
+    {
+        correctionScope.Begin(StutterProfile::Category::Phase, "spawn.physics.correct_position",
+            character_create ? "character placement" : "shell placement", m_EntityAlife.ID());
+        correctionScope.AsPoint();
+    }
+    const Fvector tracePosition = m_EntityAlife.Position();
+#endif
     // Fvector shift;shift.sub( start_from, m_EntityAlife.Position() );
     Fvector shift;
     shift.set(0, 0, 0);
@@ -704,13 +775,47 @@ bool CCharacterPhysicsSupport::CollisionCorrectObjPos(const Fvector& start_from,
     ////////////////
 
     bool ret = ActivateShapeCharacterPhysicsSupport(
-        activation_res, vbox, activation_pos, mXFORM, not_collide_characters, set_rotation, &m_EntityAlife);
+        activation_res, vbox, activation_pos, mXFORM, not_collide_characters, set_rotation, &m_EntityAlife,
+        correction_attempts);
     //////////////////
 
-    m_EntityAlife.Position().sub(activation_res, shift);
+    if (_valid(activation_res))
+        m_EntityAlife.Position().sub(activation_res, shift);
+    else
+    {
+        ret = false;
+        Msg("! [spawn.physics] rejected non-finite correction result: id=%u name=%s", m_EntityAlife.ID(),
+            m_EntityAlife.cName().c_str());
+    }
 
     if (m_pPhysicsShell)
         m_pPhysicsShell->EnableCollision();
+#if XRAY_ENABLE_STUTTER_TIMERS
+    if (traceSpawn)
+    {
+        char detail[96];
+        std::snprintf(detail, sizeof(detail), "character=%u moved_m=%.9g ok=%u", unsigned(character_create),
+            double(m_EntityAlife.Position().distance_to(tracePosition)), unsigned(ret));
+        correctionScope.SetDetail(detail);
+        StutterProfile::Scope before, after, box, indices;
+        std::snprintf(detail, sizeof(detail), "xyz=%.9g,%.9g,%.9g", double(tracePosition.x),
+            double(tracePosition.y), double(tracePosition.z));
+        before.Begin(StutterProfile::Category::Phase, "spawn.position.before_correction", detail, m_EntityAlife.ID());
+        before.AsPoint();
+        const Fvector& result = m_EntityAlife.Position();
+        std::snprintf(detail, sizeof(detail), "xyz=%.9g,%.9g,%.9g", double(result.x), double(result.y), double(result.z));
+        after.Begin(StutterProfile::Category::Phase, "spawn.position.after_correction", detail, m_EntityAlife.ID());
+        after.AsPoint();
+        std::snprintf(detail, sizeof(detail), "size=%.9g,%.9g,%.9g character=%u exists=%u", double(vbox.x),
+            double(vbox.y), double(vbox.z), unsigned(character_create), unsigned(movement()->CharacterExist()));
+        box.Begin(StutterProfile::Category::Phase, "spawn.physics.box", detail, m_EntityAlife.ID());
+        box.AsPoint();
+        std::snprintf(detail, sizeof(detail), "box_id=%u boxes=4 type=%u state=%u", unsigned(movement()->BoxID()),
+            unsigned(m_eType), unsigned(m_eState));
+        indices.Begin(StutterProfile::Category::Phase, "spawn.physics.indices", detail, m_EntityAlife.ID());
+        indices.AsPoint();
+    }
+#endif
     return ret;
 }
 
@@ -718,7 +823,11 @@ void CCharacterPhysicsSupport::set_movement_position(const Fvector& pos)
 {
     VERIFY(movement());
 
-    CollisionCorrectObjPos(pos, true);
+    // Lua restores spawn position before the stalker's physical character exists.
+    // CreateCharacterSafe corrects the final position once; existing characters still
+    // need collision correction when teleported.
+    if (m_eType != etStalker || movement()->CharacterExist())
+        CollisionCorrectObjPos(pos, true);
 
     movement()->SetPosition(m_EntityAlife.Position());
 }

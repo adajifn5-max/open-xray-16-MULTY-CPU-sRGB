@@ -79,6 +79,7 @@
     <ClInclude Include="..\xrRenderDX11\3DFluid\dx113DFluidObstacles.h" />
     <ClInclude Include="..\xrRenderDX11\3DFluid\dx113DFluidRenderer.h" />
     <ClInclude Include="..\xrRenderDX11\3DFluid\dx113DFluidVolume.h" />
+    <ClInclude Include="..\xrRenderDX11\dx11DetailWindCache.h" />
     <ClInclude Include="..\xrRender\blenders\dx11RainBlender.h" />
     <ClInclude Include="..\xrRenderDX11\dx11ConstantBuffer.h" />
     <ClInclude Include="..\xrRenderDX11\dx11ConstantBuffer_impl.h" />
@@ -141,6 +142,7 @@
     <ClInclude Include="..\xrRender\FBasicVisual.h" />
     <ClInclude Include="..\xrRender\FHierrarhyVisual.h" />
     <ClInclude Include="..\xrRender\FLOD.h" />
+    <ClInclude Include="..\xrRender\FoliageLod.h" />
     <ClInclude Include="..\xrRender\FProgressive.h" />
     <ClInclude Include="..\xrRender\FSkinned.h" />
     <ClInclude Include="..\xrRender\FSkinnedTypes.h" />
@@ -182,6 +184,8 @@
     <ClInclude Include="..\xrRender\r__sync_point.h" />
     <ClInclude Include="..\xrRender\Shader.h" />
     <ClInclude Include="..\xrRender\ShaderResourceTraits.h" />
+    <ClInclude Include="..\xrRender\ShaderCompileTasks.h" />
+    <ClInclude Include="..\xrRender\ShaderCompileCPU.h" />
     <ClInclude Include="..\xrRender\SH_Atomic.h" />
     <ClInclude Include="..\xrRender\SH_Constant.h" />
     <ClInclude Include="..\xrRender\SH_Matrix.h" />
@@ -424,7 +428,9 @@
     <ClCompile Include="r4_rendertarget_accum_direct.cpp" />
     <ClCompile Include="r4_rendertarget_phase_combine.cpp" />
     <ClCompile Include="r4_rendertarget_phase_hdao.cpp" />
-    <ClCompile Include="r4_shaders.cpp" />
+    <ClCompile Include="r4_shaders.cpp">
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="R_Backend_LOD.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>

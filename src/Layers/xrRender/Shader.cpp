@@ -29,14 +29,14 @@ void resptrcode_shader::create(IBlender* B, LPCSTR s_shader, LPCSTR s_textures, 
 }
 
 //////////////////////////////////////////////////////////////////////////
-void resptrcode_geom::create(u32 FVF, VertexBufferHandle vb, IndexBufferHandle ib)
+void resptrcode_geom::create(u32 FVF, VertexBufferHandle vb, IndexBufferHandle ib, u32 indexStride)
 {
-    _set(RImplementation.Resources->CreateGeom(FVF, vb, ib));
+    _set(RImplementation.Resources->CreateGeom(FVF, vb, ib, indexStride));
 }
 
-void resptrcode_geom::create(const VertexElement* decl, VertexBufferHandle vb, IndexBufferHandle ib)
+void resptrcode_geom::create(const VertexElement* decl, VertexBufferHandle vb, IndexBufferHandle ib, u32 indexStride)
 {
-    _set(RImplementation.Resources->CreateGeom(decl, vb, ib));
+    _set(RImplementation.Resources->CreateGeom(decl, vb, ib, indexStride));
 }
 
 
@@ -86,6 +86,7 @@ ShaderElement::ShaderElement()
     flags.bEmissive = FALSE;
     flags.bDistort = FALSE;
     flags.bWmark = FALSE;
+    flags.bFoliageFar = FALSE;
 }
 
 BOOL ShaderElement::equal(ShaderElement& S)
@@ -99,6 +100,8 @@ BOOL ShaderElement::equal(ShaderElement& S)
     if (flags.bWmark != S.flags.bWmark)
         return FALSE;
     if (flags.bDistort != S.flags.bDistort)
+        return FALSE;
+    if (flags.bFoliageFar != S.flags.bFoliageFar)
         return FALSE;
     if (passes.size() != S.passes.size())
         return FALSE;
@@ -145,20 +148,20 @@ u32 STextureList::find_texture_stage(const shared_str& TexName, bool warnIfMissi
         if (!texture)
             continue;
         if (texture->cName == TexName)
-            return stage;
+            return stage & 0x7fffffffu;
     }
 
-    if (!warnIfMissing)
-        return u32(-1);
-    VERIFY3(false, "Couldn't find texture stage", TexName.c_str());
-    return 0;
+    if (warnIfMissing)
+        VERIFY3(false, "Couldn't find texture stage", TexName.c_str());
+    // A missing texture must not alias the valid pixel texture stage zero.
+    return u32(-1);
 }
 
 void STextureList::create_texture(u32 stage, pcstr textureName, bool overrideIfExists)
 {
     for (auto& loader : *this)
     {
-        if (loader.first == stage && (!loader.second || overrideIfExists))
+        if ((loader.first & 0x7fffffffu) == (stage & 0x7fffffffu) && (!loader.second || overrideIfExists))
         {
             //  Assign correct texture
             loader.second.create(textureName);

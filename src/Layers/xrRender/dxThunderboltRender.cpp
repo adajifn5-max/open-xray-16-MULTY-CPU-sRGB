@@ -10,7 +10,7 @@ namespace xray::render::RENDER_NAMESPACE
 dxThunderboltRender::dxThunderboltRender()
 {
     // geom
-    hGeom_model.create(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1, RImplementation.Vertex.Buffer(), RImplementation.Index.Buffer());
+    hGeom_model.create(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1, RImplementation.Vertex.Buffer(), RImplementation.Index.Buffer32(), sizeof(u32));
     hGeom_gradient.create(FVF::F_LIT, RImplementation.Vertex.Buffer(), RImplementation.QuadIB);
 }
 
@@ -38,12 +38,12 @@ void dxThunderboltRender::Render(CEffect_Thunderbolt& owner)
     u32 iCount_Lock = pThRen->l_model->number_indices;
     IRender_DetailModel::fvfVertexOut* v_ptr =
         (IRender_DetailModel::fvfVertexOut*)RImplementation.Vertex.Lock(vCount_Lock, hGeom_model->vb_stride, v_offset);
-    u16* i_ptr = RImplementation.Index.Lock(iCount_Lock, i_offset);
+    u32* i_ptr = RImplementation.Index.Lock32(iCount_Lock, i_offset);
     // XForm verts
     pThRen->l_model->transfer(owner.current_xform, v_ptr, 0xffffffff, i_ptr, 0, 0.f, dv);
     // Flush if needed
     RImplementation.Vertex.Unlock(vCount_Lock, hGeom_model->vb_stride);
-    RImplementation.Index.Unlock(iCount_Lock);
+    RImplementation.Index.Unlock32(iCount_Lock);
     RCache.set_xform_world(Fidentity);
     RCache.set_Shader(pThRen->l_model->shader);
     RCache.set_Geometry(hGeom_model);

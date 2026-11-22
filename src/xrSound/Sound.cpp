@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "SoundRender_CoreA.h"
+#include "SoundCatalog.h"
 
 XRSOUND_API u32 snd_device_id = u32(-1);
 
@@ -29,6 +30,7 @@ void CSoundManager::Create()
 
     if (SoundRender->bPresent)
     {
+        SoundCatalogPrepareGame();
         env_load();
         SoundRender->_initialize();
     }

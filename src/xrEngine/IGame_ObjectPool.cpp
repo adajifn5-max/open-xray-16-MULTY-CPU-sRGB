@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #include "IGame_Level.h"
 #include "IGame_Persistent.h"
 #include "IGame_ObjectPool.h"
@@ -43,10 +44,21 @@ void IGame_ObjectPool::clear()
 IGameObject* IGame_ObjectPool::create(pcstr name)
 {
     CLASS_ID CLS = pSettings->r_clsid(name, "class");
-    IGameObject* O = smart_cast<IGameObject*>(NEW_INSTANCE(CLS));
+    XR_STUTTER_NPC_SCOPE(Spawn, "ObjectPool.create", name);
+    IGameObject* O = [&]()
+    {
+        XR_STUTTER_NPC_SCOPE(Spawn, "ObjectPool.factory", name);
+        return smart_cast<IGameObject*>(NEW_INSTANCE(CLS));
+    }();
     O->cNameSect_set(name);
-    O->Load(name);
-    O->PostLoad(name); //--#SM+#--
+    {
+        XR_STUTTER_NPC_SCOPE(Spawn, "ObjectPool.Load", name);
+        O->Load(name);
+    }
+    {
+        XR_STUTTER_NPC_SCOPE(Spawn, "ObjectPool.PostLoad", name);
+        O->PostLoad(name);
+    } //--#SM+#--
     return O;
 }
 

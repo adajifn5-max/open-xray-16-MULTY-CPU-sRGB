@@ -380,8 +380,10 @@ IndexStagingBuffer::~IndexStagingBuffer()
     Destroy();
 }
 
-void IndexStagingBuffer::Create(size_t size, bool allowReadBack /*= false*/, bool /*managed = true*/)
+void IndexStagingBuffer::Create(size_t size, bool allowReadBack /*= false*/, bool /*managed = true*/, u32 indexStride)
 {
+    R_ASSERT(indexStride == sizeof(u16) || indexStride == sizeof(u32));
+    m_IndexStride = indexStride;
     m_Size = size;
     m_AllowReadBack = allowReadBack;
 

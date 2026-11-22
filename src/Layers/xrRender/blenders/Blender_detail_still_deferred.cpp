@@ -49,6 +49,12 @@ void CBlender_Detail_Still::Compile(CBlender_Compile& C)
 {
     IBlender::Compile(C);
 
+    // Keep the legacy shader for DX10 feature levels and alternative APIs.
+    LPCSTR waveVS = "detail_w";
+#if defined(USE_DX11)
+    if (!HW.DX10Only && HW.FeatureLevel >= D3D_FEATURE_LEVEL_11_0)
+        waveVS = "detail_c";
+#endif
     bool bUseATOC = (RImplementation.o.msaa_alphatest == CRender::MSAA_ATEST_DX10_0_ATOC);
 
     switch (C.iElement)
@@ -56,7 +62,7 @@ void CBlender_Detail_Still::Compile(CBlender_Compile& C)
     case SE_R2_NORMAL_HQ: // deffer wave
         if (bUseATOC)
         {
-            uber_deffer(C, false, "detail_w", "base_atoc", true, 0, true);
+            uber_deffer(C, false, waveVS, "base_atoc", true, 0, true);
             C.r_Stencil(TRUE, D3DCMP_ALWAYS, 0xff, 0x7f, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE, D3DSTENCILOP_KEEP);
             C.r_StencilRef(0x01);
             C.r_ColorWriteEnable(false, false, false, false);
@@ -66,7 +72,7 @@ void CBlender_Detail_Still::Compile(CBlender_Compile& C)
             C.r_End();
         }
 
-        uber_deffer(C, false, "detail_w", "base", true, 0, true);
+        uber_deffer(C, false, waveVS, "base", true, 0, true);
         C.r_Stencil(TRUE, D3DCMP_ALWAYS, 0xff, 0x7f, D3DSTENCILOP_KEEP, D3DSTENCILOP_REPLACE, D3DSTENCILOP_KEEP);
         C.r_StencilRef(0x01);
         C.r_CullMode(D3DCULL_NONE);

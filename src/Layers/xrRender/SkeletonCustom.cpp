@@ -1,5 +1,6 @@
 //---------------------------------------------------------------------------
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #pragma hdrstop
 
 #include "SkeletonCustom.h"
@@ -165,9 +166,24 @@ CSkeletonX* CKinematics::LL_GetChild(u32 idx)
 
 void CKinematics::Load(const char* N, IReader* data, u32 dwFlags)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.skeleton_load", N);
     // Msg              ("skeleton: %s",N);
     inherited::Load(N, data, dwFlags);
 
+    // Every skeleton child is used as CSkeletonX by AfterLoad, visibility,
+    // picking and wallmarks. Reject malformed exports before dereferencing it.
+    for (u32 childIndex = 0; childIndex < children.size(); ++childIndex)
+    {
+        if (!LL_GetChild(childIndex))
+        {
+            const auto* child = children[childIndex];
+            FATAL_F("Invalid skeleton visual '%s': child %u has type %u; expected skinned mesh "
+                "(OGF type 4 or 5). Export bone weights for every skeleton child.",
+                N ? N : "<unnamed>", childIndex, child ? child->Type : u32(-1));
+        }
+    }
+
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.skeleton_cpu", N);
     pUserData = nullptr;
     m_lod = nullptr;
     // loading lods

@@ -3,6 +3,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #include "Engine.h"
 
 #include "XR_IOConsole.h"
@@ -20,6 +21,7 @@ struct SoundRenderer final : public pureFrame
 {
     void OnFrame() override
     {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "SoundRenderer::OnFrame");
         GEnv.Sound->render();
     }
 } g_sound_renderer;

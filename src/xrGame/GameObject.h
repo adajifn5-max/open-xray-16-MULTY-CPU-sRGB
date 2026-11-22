@@ -241,6 +241,7 @@ public:
     virtual void net_MigrateInactive(NET_Packet& packet) override { Props.net_Local = FALSE; }
     virtual void net_MigrateActive(NET_Packet& packet) override { Props.net_Local = TRUE; }
     virtual void net_Relcase(IGameObject* O) override; // destroy all links to another objects
+    virtual bool can_skip_net_relcase() override;
     virtual void save(NET_Packet& output_packet) override;
     virtual void load(IReader& input_packet);
     // Position stack

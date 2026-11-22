@@ -3,6 +3,7 @@
 
 #include "Layers/xrRender/ResourceManager.h"
 #include "dx11TextureUtils.h"
+#include <DirectXTex.h>
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -230,6 +231,13 @@ void CRT::create(LPCSTR Name, u32 w, u32 h, D3DFORMAT f, u32 SampleCount /*= 1*/
         {
             set_slice_write(id, -1);
         }
+    }
+    else if (flags.test(CreateBase) && RImplementation.o.linear_rendering)
+    {
+        D3D11_RENDER_TARGET_VIEW_DESC output{};
+        output.Format = DirectX::MakeSRGB(desc.Format);
+        output.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        CHK_DX(HW.pDevice->CreateRenderTargetView(pSurface, &output, &pRT));
     }
     else
         CHK_DX(HW.pDevice->CreateRenderTargetView(pSurface, 0, &pRT));

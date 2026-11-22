@@ -110,7 +110,8 @@ class IndexStagingBuffer
 public:
     ~IndexStagingBuffer();
 
-    void Create(size_t size, bool allowReadBack = false, bool managed = true);
+    void Create(size_t size, bool allowReadBack = false, bool managed = true, u32 indexStride = sizeof(u16));
+    u32 IndexStride() const { return m_IndexStride; }
     bool IsValid() const;
     void* Map(size_t offset = 0, size_t size = 0, bool read = false);
     void Unmap(bool doFlush = false);
@@ -154,6 +155,7 @@ private:
     IndexBufferHandle m_DeviceBuffer{};
     HostBufferHandle m_HostBuffer{};
     size_t m_Size{};
+    u32 m_IndexStride{sizeof(u16)};
     u32 m_RefCounter{};
     bool m_AllowReadBack{}; // specifies whether host will want to have the data back (e.g. skinning code)
 };

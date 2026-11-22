@@ -124,7 +124,7 @@ public:
     {
         if (!flags.bLoaded)
             Load();
-        return reinterpret_cast<ImTextureID>(m_pSRView);
+        return reinterpret_cast<ImTextureID>(UIShaderView());
     }
 #elif defined(USE_OGL)
     ImTextureID GetImTextureID()
@@ -155,6 +155,8 @@ private:
 #endif
 #if defined(USE_DX11)
     void Apply(CBackend& cmd_list, u32 dwStage) const;
+    ID3DShaderResourceView* ColorView() const;
+    ID3DShaderResourceView* UIShaderView() const;
     D3D_USAGE GetUsage();
 #endif
 
@@ -165,7 +167,7 @@ public: //	Public class members (must be encapsulated further)
         u32 bLoaded : 1;
         u32 bUser : 1;
         u32 seqCycles : 1;
-        u32 MemoryUsage : 28;
+        u32 MemoryUsage; // Full byte count: 8K RGBA mip chains exceed 28 bits.
     } flags;
 
     fastdelegate::FastDelegate2<CBackend&,u32> bind;
@@ -212,6 +214,8 @@ private:
 
 #if defined(USE_DX11)
     ID3DShaderResourceView* m_pSRView{ nullptr };
+    mutable ID3DShaderResourceView* m_srgbSource{ nullptr };
+    mutable ID3DShaderResourceView* m_srgbView{ nullptr };
     ID3DShaderResourceView* srv_all{ nullptr };
     xr_vector<ID3DShaderResourceView*> srv_per_slice;
     // Sequence view data

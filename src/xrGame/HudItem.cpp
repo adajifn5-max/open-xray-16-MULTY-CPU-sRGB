@@ -11,8 +11,15 @@
 #include "player_hud.h"
 #include "xrCore/Animation/SkeletonMotions.hpp"
 #include "xrNetServer/NET_Messages.h"
-
 #include "xrUICore/ui_base.h"
+#include <map>
+#include <mutex>
+#include <string>
+
+#ifdef DEBUG
+static u64 g_hud_animation_cache_hits = 0;
+static u64 g_hud_animation_cache_misses = 0;
+#endif
 
 CHudItem::CHudItem()
 {
@@ -381,7 +388,79 @@ bool CHudItem::TryPlayAnimIdle()
 //AVO: check if animation exists
 bool CHudItem::isHUDAnimationExist(pcstr anim_name, bool silent) const
 {
+
     if (const auto* data = HudItemData()) // First person
+    {
+        string256 anim_name_r;
+        const bool is_16x9 = UI().is_widescreen();
+        const u16 attach_place_idx = data->m_attach_place_idx;
+
+        xr_sprintf(
+            anim_name_r,
+            "%s%s",
+            anim_name,
+            (attach_place_idx == 1 && is_16x9) ? "_16x9" : ""
+        );
+
+        if (data->m_hand_motions.find_motion(anim_name_r))
+            return true;
+    }
+    else if (HudSection().c_str()) // Third person
+    {
+        using AnimationCacheKey = std::pair<std::string, std::string>;
+
+        static std::map<AnimationCacheKey, bool> animation_cache;
+        static std::mutex animation_cache_mutex;
+
+        const AnimationCacheKey key{
+            HudSection().c_str(),
+            anim_name
+        };
+
+        bool exists = false;
+
+        {
+            std::lock_guard<std::mutex> lock(animation_cache_mutex);
+
+            auto it = animation_cache.find(key);
+
+            if (it != animation_cache.end())
+            {
+#ifdef DEBUG
+                ++g_hud_animation_cache_hits;
+#endif
+                exists = it->second;
+            }
+            else
+            {
+#ifdef DEBUG
+                ++g_hud_animation_cache_misses;
+#endif
+
+                const CMotionDef* temp_motion_def = nullptr;
+
+                exists = g_player_hud->motion_length(
+                    anim_name,
+                    HudSection(),
+                    temp_motion_def
+                ) > 100;
+
+                animation_cache.emplace(key, exists);
+            }
+        }
+
+        if (exists)
+            return true;
+    }
+    else
+        return false; // No hud section, no warning
+
+#ifdef DEBUG
+    if (!silent)
+        Msg("~ [WARNING] ------ Animation [%s] does not exist in [%s]",
+            anim_name, HudSection().c_str());
+
+    /*if (const auto* data = HudItemData()) // First person
     {
         string256 anim_name_r;
         const bool is_16x9 = UI().is_widescreen();
@@ -400,7 +479,7 @@ bool CHudItem::isHUDAnimationExist(pcstr anim_name, bool silent) const
         return false; // No hud section, no warning
 #ifdef DEBUG
     if (!silent)
-        Msg("~ [WARNING] ------ Animation [%s] does not exist in [%s]", anim_name, HudSection().c_str());
+        Msg("~ [WARNING] ------ Animation [%s] does not exist in [%s]", anim_name, HudSection().c_str());*/
 #endif
     return false;
 }

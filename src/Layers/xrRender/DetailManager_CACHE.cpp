@@ -57,6 +57,8 @@ void CDetailManager::cache_Task(int gx, int gz, Slot* D)
     // Unpacking
     u32 old_type = D->type;
     D->type = stPending;
+    // A recycled slot must rebuild visibility for its new contents.
+    D->frame = 0;
     D->sx = sx;
     D->sz = sz;
 
@@ -66,6 +68,9 @@ void CDetailManager::cache_Task(int gx, int gz, Slot* D)
 
     for (u32 i = 0; i < dm_obj_in_slot; i++)
     {
+        // Render lists borrow pointers from items; retire them before pool reuse.
+        for (auto& renderItems : D->G[i].r_items)
+            renderItems.clear();
         D->G[i].id = DS.r_id(i);
         for (u32 clr = 0; clr < D->G[i].items.size(); clr++)
             poolSI.destroy(D->G[i].items[clr]);

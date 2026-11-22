@@ -13,6 +13,53 @@
 #include "xrAICore/Navigation/level_graph.h"
 #include "xrEngine/profiler.h"
 
+u32 SpawnPreparation::SelectNearestVertex(const xr_vector<u32>& vertices, const Fvector& position)
+{
+    XR_STUTTER_NPC_SCOPE(Phase, "spawn.prepare.nearest", "restriction distance scan",
+        reinterpret_cast<std::uintptr_t>(&vertices), vertices.size());
+    const auto& graph = ai().level_graph();
+    struct Nearest
+    {
+        float distance = flt_max;
+        u32 vertex = u32(-1);
+    };
+    const auto scan = [&graph, &vertices, position](size_t first, size_t last)
+    {
+        Nearest nearest;
+        for (size_t i = first; i < last; ++i)
+        {
+            const u32 vertex = vertices[i];
+            VERIFY2(graph.valid_vertex_id(vertex), make_string("%d", vertex));
+            const float distance = graph.vertex_position(vertex).distance_to_sqr(position);
+            if (distance < nearest.distance)
+                nearest = {distance, vertex};
+        }
+        return nearest;
+    };
+
+    // Small scans stay inline. For a large border Main scans the first half
+    // while one task scans the second. No NPC, restriction cache or graph mask
+    // is read or modified by the worker; graph geometry is immutable here.
+    constexpr size_t parallelThreshold = 4096;
+    if (vertices.size() < parallelThreshold || !CanRunTasks(NearestVertex))
+        return scan(0, vertices.size()).vertex;
+
+    const size_t middle = vertices.size() / 2;
+    Nearest second;
+    TaskGroup tasks(1, "restriction distance scan", &vertices);
+    tasks.Add([&scan, &second, subject = &vertices, middle, count = vertices.size()]
+    {
+        XR_STUTTER_SCOPE(Task, "spawn.task.nearest", "restriction distance scan",
+            reinterpret_cast<std::uintptr_t>(subject), count - middle);
+        second = scan(middle, count);
+    });
+    const Nearest first = scan(0, middle);
+    tasks.Join();
+    // Strict < preserves the original first-in-border choice on equal distance,
+    // and the original invalid result for NaN/FLT_MAX-only inputs.
+    return second.distance < first.distance ? second.vertex : first.vertex;
+}
+
 CSpaceRestrictionBridge::~CSpaceRestrictionBridge() { xr_delete(m_object); }
 void CSpaceRestrictionBridge::change_implementation(CSpaceRestrictionBase* object)
 {

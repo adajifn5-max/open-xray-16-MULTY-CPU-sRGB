@@ -4,6 +4,14 @@
 
 #include "PHDynamicData.h"
 #include "Physics.h"
+static thread_local dGeomID placementQueryGeom = nullptr;
+dGeomID ExchangePlacementQueryGeom(dGeomID geom) noexcept
+{
+    const auto previous = placementQueryGeom;
+    placementQueryGeom = geom;
+    return previous;
+}
+bool IsPlacementQueryActive() noexcept { return placementQueryGeom != nullptr; }
 #include "tri-colliderknoopc/dTriList.h"
 #include "PHContactBodyEffector.h"
 
@@ -145,6 +153,15 @@ IC static int CollideIntoGroup(
         surface.soft_erp = ERP(spring, damping);
         surface.soft_cfm = CFM(spring, damping);
         surface.mu = material_2->fPHFriction * material_1->fPHFriction;
+        if (placementQueryGeom && (g1 == placementQueryGeom || g2 == placementQueryGeom))
+        {
+            // Only the probe owns response joints. Do not invoke the obstacle's callbacks,
+            // apply forces to it, or create a dynamic joint that wakes/merges its island.
+            auto* probeData = g1 == placementQueryGeom ? usr_data_1 : usr_data_2;
+            if (probeData && probeData->object_callbacks)
+                probeData->object_callbacks->Call(do_collide, g1 == placementQueryGeom, c, material_1, material_2);
+            continue;
+        }
         /////////////////////////////////////////////////////////////////////////////////////////////////
 
         Flags32& flags_1 = material_1->Flags;
@@ -266,6 +283,11 @@ void NearCallback(CPHObject* obj1, CPHObject* obj2, dGeomID o1, dGeomID o2)
 {
     CPHIsland* island1 = obj1->DActiveIsland();
     CPHIsland* island2 = obj2->DActiveIsland();
+    if (IsPlacementQueryActive())
+    {
+        CollideIntoGroup(o1, o2, ContactGroup, island1, island1->MaxJoints());
+        return;
+    }
     obj2->near_callback(obj1);
     int MAX_CONTACTS = -1;
     if (!island1->CanMerge(island2, MAX_CONTACTS))

@@ -35,4 +35,4 @@ public:
 
 private:
     DECLARE_SCRIPT_REGISTER_FUNCTION();
-};
+    };

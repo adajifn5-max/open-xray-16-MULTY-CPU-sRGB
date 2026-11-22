@@ -226,8 +226,8 @@ void CRenderTarget::build_textures()
                 switch (ps_r_ssao)
                 {
                 case 1: numDir = 4.0f; break;
-                case 2: numDir = 6.0f; break;
-                case 3: numDir = 8.0f; break;
+                case 2: numDir = 5.0f; break;
+                case 3: numDir = 6.0f; break;
                 case 4: numDir = 8.0f; break;
                 }
                 float angle = 2 * PI * ::Random.randF(0.0f, 1.0f) / numDir;
@@ -259,7 +259,8 @@ void CRenderTarget::build_textures()
                 /*.height     =*/ TEX_jitter,
                 /*.format     =*/ desc.Format,
                 /*.rowPitch   =*/ desc.Width * sampleSize,
-                /*.slicePitch =*/ 0,
+               // /*.slicePitch =*/ 0,
+                /*.slicePitch =*/ sizeof(tempData[0]),
                 /*.pixels     =*/ (uint8_t*)tempData[0],
             };
 

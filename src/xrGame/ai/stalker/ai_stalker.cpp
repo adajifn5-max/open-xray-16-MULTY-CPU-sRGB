@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "pch_script.h"
+#include "xrCore/StutterProfile.h"
 #include "ai_stalker.h"
 #include "ai/ai_monsters_misc.h"
 #include "Weapon.h"
@@ -310,7 +311,7 @@ void CAI_Stalker::reload(LPCSTR section)
 
     LPCSTR queue_sect = READ_IF_EXISTS(pSettings, r_string, cNameSect().c_str(), "fire_queue_section", nullptr);
 
-    if (!queue_sect || xr_strcmp(queue_sect, "") != 0 || !pSettings->section_exist(queue_sect))
+    if (!queue_sect || xr_strcmp(queue_sect, "") == 0 || !pSettings->section_exist(queue_sect)) //!= 0 check
     {
         queue_sect = cNameSect().c_str();
     }
@@ -747,6 +748,7 @@ void CAI_Stalker::net_Import(NET_Packet& P)
 
 void CAI_Stalker::update_object_handler()
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "CAI_Stalker::update_object_handler");
     if (!g_Alive())
         return;
 
@@ -1091,7 +1093,7 @@ void CAI_Stalker::Think()
     //		brain().setup			(this);
     //		brain().update			(update_delta);
     //	}
-    STOP_PROFILE
+    STOP_PROFILE //check
 
     START_PROFILE("stalker/schedule_update/think/movement")
     if (!g_Alive())
@@ -1272,7 +1274,7 @@ void aim_target(shared_str const& aim_bone_id, Fvector& result, const CGameObjec
     VERIFY(kinematics);
 
     u16 bone_id = kinematics->LL_BoneID(aim_bone_id);
-    VERIFY2(bone_id != BI_NONE, make_string("Cannot find bone %s", bone_id));
+    VERIFY2(bone_id != BI_NONE, make_string("Cannot find bone %s", aim_bone_id.c_str())); //check
 
     Fmatrix const& bone_matrix = kinematics->LL_GetTransform(bone_id);
     Fmatrix final;
@@ -1327,6 +1329,43 @@ bool CAI_Stalker::unlimited_ammo() { return infinite_ammo() && CObjectHandler::p
 void CAI_Stalker::ResetBoneProtections(pcstr imm_sect, pcstr bone_sect)
 {
     IKinematics* pKinematics = smart_cast<IKinematics*>(Visual());
+    if (!pKinematics)
+        return;
+
+    CInifile* ini = pKinematics->LL_UserData();
+
+    // Use model defaults only when no explicit section was provided.
+    if (!imm_sect && ini && ini->line_exist("immunities", "immunities_sect"))
+        imm_sect = ini->r_string("immunities", "immunities_sect");
+
+    if (!bone_sect && ini &&
+        ini->line_exist("bone_protection", "bones_protection_sect"))
+    {
+        bone_sect = ini->r_string("bone_protection", "bones_protection_sect");
+    }
+
+    // Validate sections before changing protection settings.
+    if (imm_sect)
+        R_ASSERT2(pSettings->section_exist(imm_sect), imm_sect);
+
+    if (bone_sect)
+        R_ASSERT2(pSettings->section_exist(bone_sect), bone_sect);
+
+    if (imm_sect)
+        conditions().LoadImmunities(imm_sect, pSettings);
+
+    if (bone_sect)
+    {
+        if (!m_boneHitProtection)
+            m_boneHitProtection = xr_new<SBoneProtections>();
+
+        m_boneHitProtection->reload(bone_sect, pKinematics);
+    }
+}
+
+/* CAI_Stalker::ResetBoneProtections(pcstr imm_sect, pcstr bone_sect)
+{
+    IKinematics* pKinematics = smart_cast<IKinematics*>(Visual());
     CInifile* ini = pKinematics->LL_UserData();
     if (ini)
     {
@@ -1342,4 +1381,5 @@ void CAI_Stalker::ResetBoneProtections(pcstr imm_sect, pcstr bone_sect)
             m_boneHitProtection->reload(bone_sect, pKinematics);
         }
     }
-}
+}*/
+

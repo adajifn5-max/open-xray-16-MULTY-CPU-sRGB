@@ -58,6 +58,10 @@ void CResourceManager::reset_end()
             {
                 geom->ib = RImplementation.Index.Buffer();
             }
+            else if (geom->ib == RImplementation.Index.old_pIB32)
+            {
+                geom->ib = RImplementation.Index.Buffer32();
+            }
             else if (geom->ib == RImplementation.old_QuadIB)
             {
                 geom->ib = RImplementation.QuadIB;
@@ -113,40 +117,41 @@ CResourceManager::~CResourceManager()
 
 void CResourceManager::Dump(bool bBrief)
 {
-    Msg("* RM_Dump: textures  : %d", m_textures.size());
+  //  Msg("* RM_Dump: textures  : %d", m_textures.size());
     if (!bBrief)
-        mdump(m_textures);
-    Msg("* RM_Dump: rtargets  : %d", m_rtargets.size());
+  //      mdump(m_textures);
+  //  Msg("* RM_Dump: rtargets  : %d", m_rtargets.size());
     if (!bBrief)
-        mdump(m_rtargets);
+  //      mdump(m_rtargets);
     //  DX10 cut    Msg("* RM_Dump: rtargetsc : %d", m_rtargets_c.size()); if(!bBrief) mdump(m_rtargets_c);
-    Msg("* RM_Dump: vs        : %d", m_vs.size());
+  //  Msg("* RM_Dump: vs        : %d", m_vs.size());
     if (!bBrief)
-        mdump(m_vs);
-    Msg("* RM_Dump: ps        : %d", m_ps.size());
+   //     mdump(m_vs);
+  //  Msg("* RM_Dump: ps        : %d", m_ps.size());
     if (!bBrief)
-        mdump(m_ps);
-    Msg("* RM_Dump: gs        : %d", m_gs.size());
+  //      mdump(m_ps);
+ //   Msg("* RM_Dump: gs        : %d", m_gs.size());
     if (!bBrief)
-        mdump(m_gs);
-#ifdef USE_DX11
-    Msg("* RM_Dump: cs        : %d", m_cs.size());
-    if (!bBrief)
-        mdump(m_cs);
-    Msg("* RM_Dump: hs        : %d", m_hs.size());
-    if (!bBrief)
-        mdump(m_hs);
-    Msg("* RM_Dump: ds        : %d", m_ds.size());
-    if (!bBrief)
-        mdump(m_ds);
-#endif
-    Msg("* RM_Dump: dcl       : %d", v_declarations.size());
-    Msg("* RM_Dump: states    : %d", v_states.size());
-    Msg("* RM_Dump: tex_list  : %d", lst_textures.size());
-    Msg("* RM_Dump: matrices  : %d", lst_matrices.size());
-    Msg("* RM_Dump: lst_constants: %d", lst_constants.size());
-    Msg("* RM_Dump: v_passes  : %d", v_passes.size());
-    Msg("* RM_Dump: v_elements: %d", v_elements.size());
-    Msg("* RM_Dump: v_shaders : %d", v_shaders.size());
+        (void)bBrief;
+ //       mdump(m_gs);
+//#ifdef USE_DX11
+  //  Msg("* RM_Dump: cs        : %d", m_cs.size());
+  //  if (!bBrief)
+  //      mdump(m_cs);
+  //  Msg("* RM_Dump: hs        : %d", m_hs.size());
+   // if (!bBrief)
+   //     mdump(m_hs);
+   // Msg("* RM_Dump: ds        : %d", m_ds.size());
+  //  if (!bBrief)
+  //      mdump(m_ds);
+//#endif
+   //Msg("* RM_Dump: dcl       : %d", v_declarations.size());
+  //  Msg("* RM_Dump: states    : %d", v_states.size());
+  //  Msg("* RM_Dump: tex_list  : %d", lst_textures.size());
+  //  Msg("* RM_Dump: matrices  : %d", lst_matrices.size());
+ //   Msg("* RM_Dump: lst_constants: %d", lst_constants.size());
+  //  Msg("* RM_Dump: v_passes  : %d", v_passes.size());
+  //  Msg("* RM_Dump: v_elements: %d", v_elements.size());
+  //  Msg("* RM_Dump: v_shaders : %d", v_shaders.size());
 }
-} // namespace xray::render::RENDER_NAMESPACE
+}; // namespace xray::render::RENDER_NAMESPACE

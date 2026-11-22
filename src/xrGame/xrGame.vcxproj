@@ -834,6 +834,7 @@
     <ClInclude Include="inventory_upgrade_root.h" />
     <ClInclude Include="inventory_upgrade_root_inline.h" />
     <ClInclude Include="item_manager.h" />
+    <ClInclude Include="deferred_alife_save.h" />
     <ClInclude Include="Level.h" />
     <ClInclude Include="LevelGraphDebugRender.hpp" />
     <ClInclude Include="Level_Bullet_Manager.h" />

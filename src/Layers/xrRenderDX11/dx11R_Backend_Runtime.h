@@ -235,14 +235,15 @@ ICF void CBackend::set_Vertices(ID3DVertexBuffer* _vb, u32 _vb_stride)
     }
 }
 
-ICF void CBackend::set_Indices(ID3DIndexBuffer* _ib)
+ICF void CBackend::set_Indices(ID3DIndexBuffer* _ib, u32 indexStride)
 {
-    if (ib != _ib)
+    if (ib != _ib || ib_stride != indexStride)
     {
         PGO(Msg("PGO:IB:%x", _ib));
         stat.ib++;
         ib = _ib;
-        HW.get_context(context_id)->IASetIndexBuffer(ib, DXGI_FORMAT_R16_UINT, 0);
+        ib_stride = indexStride;
+        HW.get_context(context_id)->IASetIndexBuffer(ib, ib_stride == sizeof(u32) ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT, 0);
     }
 }
 
@@ -394,7 +395,7 @@ IC void CBackend::set_Geometry(SGeometry* _geom)
     set_Format(&*_geom->dcl);
 
     set_Vertices(_geom->vb, _geom->vb_stride);
-    set_Indices(_geom->ib);
+    set_Indices(_geom->ib, _geom->ib_stride);
 }
 
 IC void CBackend::set_Scissor(const Irect* R)

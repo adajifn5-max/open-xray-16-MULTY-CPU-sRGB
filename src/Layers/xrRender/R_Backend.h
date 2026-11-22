@@ -108,6 +108,7 @@ private:
     SDeclaration* decl;
     VertexBufferHandle vb;
     IndexBufferHandle ib;
+    u32 ib_stride{sizeof(u16)};
     u32 vb_stride;
 
     // Pixel/Vertex constants
@@ -442,7 +443,7 @@ public:
     ICF void SetBaseVertex(u32 baseV);
     ICF void DrawIndexedBaseVertex(GLenum topology, u32 indexCount, u32 startI, u32 baseV);
 #endif
-    ICF void set_Indices(IndexBufferHandle _ib);
+    ICF void set_Indices(IndexBufferHandle _ib, u32 indexStride = sizeof(u16));
     ICF void set_Geometry(SGeometry* _geom);
     ICF void set_Geometry(ref_geom& _geom) { set_Geometry(&*_geom); }
     IC void set_Stencil(u32 _enable, u32 _func = D3DCMP_ALWAYS, u32 _ref = 0x00, u32 _mask = 0x00,

@@ -1,7 +1,10 @@
 #include "stdafx.h"
+#include "xrCore/StutterProfile.h"
 #pragma hdrstop
 
 #include <DirectXTex.h>
+#include "dx11TextureMipSelection.h"
+#include "dx11ColorSpace.h"
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -96,6 +99,7 @@ IC void Reduce(size_t& w, size_t& h, size_t& l, int skip)
 
 ID3DBaseTexture* CRender::texture_load(LPCSTR fRName, u32& ret_msize)
 {
+    XR_STUTTER_DISABLED_SCOPE(Phase, "render.dds_load", fRName);
     ret_msize = 0;
     R_ASSERT1_CURE(fRName && fRName[0], { return nullptr; });
 
@@ -138,7 +142,11 @@ ID3DBaseTexture* CRender::texture_load(LPCSTR fRName, u32& ret_msize)
     }
 
     // Load and get header
-    IReader* S = FS.r_open(fn);
+    IReader* S = [&]()
+    {
+        XR_STUTTER_DISABLED_SCOPE(Phase, "render.dds_open", fn);
+        return FS.r_open(fn);
+    }();
     R_ASSERT3_CURE(S, "Can't open texture", fn, { return nullptr; });
 
     size_t img_size = S->length();
@@ -152,7 +160,11 @@ ID3DBaseTexture* CRender::texture_load(LPCSTR fRName, u32& ret_msize)
     {
         DirectX::TexMetadata IMG;
         DirectX::ScratchImage texture;
-        auto hresult = LoadFromDDSMemory(static_cast<u8*>(S->pointer()), img_size, dds_flags, &IMG, texture);
+        auto hresult = [&]()
+        {
+            XR_STUTTER_DISABLED_SCOPE(Phase, "render.dds_parse", fRName, i, dds_flags);
+            return LoadFromDDSMemory(static_cast<u8*>(S->pointer()), img_size, dds_flags, &IMG, texture);
+        }();
 
         R_ASSERT3_CURE(SUCCEEDED(hresult), "Failed to load texture from memory", fn,
         {
@@ -160,18 +172,53 @@ ID3DBaseTexture* CRender::texture_load(LPCSTR fRName, u32& ret_msize)
             return nullptr;
         });
 
+        // === DDS DIAGNOSTICS: BEFORE LOD REDUCTION ===
+Msg("[DDS] %s | format=%u | %zux%zu | mips=%zu | sRGB=%d",
+    fn,
+    static_cast<unsigned>(IMG.format),
+    IMG.width,
+    IMG.height,
+    IMG.mipLevels,
+    DirectX::IsSRGB(IMG.format) ? 1 : 0);
+// ============================================
         // Check for LMAP and compress if needed
         xr_strlwr(fn);
 
         const int img_loaded_lod = get_texture_load_lod(fn);
 
-        size_t mip_lod = 0;
-        if (img_loaded_lod && !IMG.IsCubemap())
+        // These packed colour formats have no hardware sRGB view.
+        if (RImplementation.o.linear_rendering &&
+            (IMG.format == DXGI_FORMAT_B5G6R5_UNORM || IMG.format == DXGI_FORMAT_B5G5R5A1_UNORM ||
+             IMG.format == DXGI_FORMAT_B4G4R4A4_UNORM))
         {
-            const auto old_mipmap_cnt = IMG.mipLevels;
-            Reduce(IMG.width, IMG.height, IMG.mipLevels, img_loaded_lod);
-            mip_lod = old_mipmap_cnt - IMG.mipLevels;
+            DirectX::ScratchImage converted;
+            hresult = DirectX::Convert(texture.GetImages(), texture.GetImageCount(), IMG,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DirectX::TEX_FILTER_DEFAULT, 0.f, converted);
+            R_ASSERT3_CURE(SUCCEEDED(hresult), "Failed to expand packed colour texture", fn,
+            {
+                FS.r_close(S);
+                return nullptr;
+            });
+            texture = std::move(converted);
+            IMG = texture.GetMetadata();
         }
+        std::vector<DirectX::Image> selectedImages;
+        size_t selectedBytes = 0;
+        const size_t mip_lod = texture_loading::SelectMips(texture,
+            static_cast<size_t>(std::max(img_loaded_lod, 0)), IMG, selectedImages, selectedBytes);
+        R_ASSERT3_CURE(!selectedImages.empty(), "Invalid texture mip layout", fn,
+        {
+            FS.r_close(S);
+            return nullptr;
+        });
+
+        Msg("[DDS_LOD] %s | requestedLOD=%d | skippedMips=%zu | GPU=%zux%zu | remainingMips=%zu",
+    fn,
+    img_loaded_lod,
+    mip_lod,
+    IMG.width,
+    IMG.height,
+    IMG.mipLevels);
 
         // DirectX requires compressed texture size to be
         // a multiple of 4. Make sure to meet this requirement.
@@ -181,14 +228,25 @@ ID3DBaseTexture* CRender::texture_load(LPCSTR fRName, u32& ret_msize)
             IMG.height = (IMG.height + 3u) & ~0x3u;
         }
 
-        hresult = CreateTextureEx(HW.pDevice, texture.GetImages() + mip_lod, texture.GetImageCount(), IMG,
+        if (RImplementation.o.linear_rendering)
+        {
+            IMG.format = texture_color::ResourceFormat(IMG.format);
+            for (auto& image : selectedImages)
+                image.format = IMG.format; // Identical storage; DirectXTex validates matching descriptors.
+        }
+
+        hresult = [&]()
+        {
+            XR_STUTTER_DISABLED_SCOPE(Phase, "render.dds_gpu", fRName, i, dds_flags);
+            return CreateTextureEx(HW.pDevice, selectedImages.data(), selectedImages.size(), IMG,
             D3D_USAGE_IMMUTABLE, D3D_BIND_SHADER_RESOURCE, 0, IMG.miscFlags, DirectX::CREATETEX_DEFAULT,
             &pTexture2D);
+        }();
 
         if (SUCCEEDED(hresult))
         {
             // OK
-            ret_msize = calc_texture_size(img_loaded_lod, IMG.mipLevels, img_size);
+            ret_msize = static_cast<u32>(std::min(selectedBytes, size_t(0xffffffffu)));
             break;
         }
 

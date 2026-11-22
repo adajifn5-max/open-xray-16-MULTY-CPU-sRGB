@@ -1,4 +1,5 @@
 #include "pch_script.h"
+#include "xrCore/StutterProfile.h"
 #include "GamePersistent.h"
 #include "xrCore/FMesh.hpp"
 #include "xrEngine/XR_IOConsole.h"
@@ -13,6 +14,7 @@
 #include "game_base_space.h"
 #include "stalker_animation_data_storage.h"
 #include "stalker_velocity_holder.h"
+#include "xrCommon/xr_set.h"
 
 #include "ActorEffector.h"
 #include "Actor.h"
@@ -171,10 +173,60 @@ void CGamePersistent::Disconnect()
     m_game_params.m_e_game_type = eGameIDNoGame;
 }
 
+static xr_vector<shared_str> CollectArtefactVisuals(const CInifile& settings)
+{
+    xr_set<shared_str> unique;
+    for (const auto* section : settings.sections())
+    {
+        const char* name = section->Name.c_str();
+        if (!settings.line_exist(name, "class") || !settings.line_exist(name, "visual") ||
+            xr_strcmp(settings.r_string(name, "class"), "ARTEFACT") != 0)
+            continue;
+        const char* visual = settings.r_string(name, "visual");
+        string_path model;
+        if (!visual[0] || xr_strlen(visual) >= sizeof(model))
+            continue;
+        xr_strcpy(model, visual);
+        xr_strlwr(model);
+        for (char* p = model; *p; ++p)
+            if (*p == '/') *p = '\\';
+        if (char* extension = strext(model)) *extension = 0;
+        if (model[0]) unique.emplace(model);
+    }
+    return xr_vector<shared_str>(unique.begin(), unique.end());
+}
+
 void CGamePersistent::OnGameStart()
 {
     inherited::OnGameStart();
     UpdateGameType();
+    if (m_game_params.m_e_game_type != eGameIDSingle || GEnv.isDedicatedServer ||
+        strstr(Core.Params, "-noprefetch"))
+        return;
+
+    // Item packets arrive after their NPC. Prepare artefact visuals while loading,
+    // before those packets can trigger a first model/shader load in ProcessGameEvents.
+#if XRAY_ENABLE_STUTTER_TIMERS
+    CTimer timer;
+    timer.Start();
+#endif
+    u32 prepared = 0;
+    for (const auto& model : CollectArtefactVisuals(*pSettings))
+    {
+        string_path path;
+        if (!FS.exist(path, "$game_meshes$", model.c_str(), ".ogf"))
+        {
+            Msg("! [spawn.prefetch] missing artefact visual: %s", model.c_str());
+            continue;
+        }
+        IRenderVisual* visual = GEnv.Render->model_Create(model.c_str());
+        GEnv.Render->model_Delete(visual); // Return instance to the model pool; retain shared resources.
+        ++prepared;
+    }
+    if (prepared) GEnv.Render->ResourcesDeferredUpload();
+#if XRAY_ENABLE_STUTTER_TIMERS
+    Msg("* [spawn.prefetch] artefact visuals=%u time=%u ms", prepared, timer.GetElapsed_ms());
+#endif
 }
 
 LPCSTR GameTypeToString(EGameIDs gt, bool bShort)

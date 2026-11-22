@@ -89,7 +89,7 @@ void Upgrade::construct(const shared_str& upgrade_id, Group& parental_group, Man
     shared_str properties = pSettings->r_string(id(), "property");
 #ifndef MASTER_GOLD
     if (properties.empty())
-        Msg("Upgrade <%s> : property is empty !", id_str());
+        Msg("Upgrade <%s> : property is empty !", id_str()); // check
 #endif
 
     string256 buffer;

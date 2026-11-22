@@ -7,8 +7,9 @@
 //#define DEBUG_SCHEDULER
 //#define DEBUG_SCHEDULERMT
 
-float psShedulerCurrent = 10.f;
-float psShedulerTarget = 10.f;
+//float psShedulerCurrent = 3.f;
+ENGINE_API float psShedulerCurrent = 3.f;
+float psShedulerTarget = 3.f;
 const float psShedulerReaction = 0.1f;
 bool isSheduleInProgress = false;
 
@@ -321,6 +322,8 @@ void CSheduler::ProcessStep()
 
     // Normal priority
     const u32 dwTime = Device.dwTimeGlobal;
+    const u64 hardLimit11ms =
+    cycles_start + CPU::qpc_freq * 11ull / 1000ull;
 
 #ifdef DEBUG
     CTimer eTimer;
@@ -328,6 +331,12 @@ void CSheduler::ProcessStep()
 
     for (int i = 0; !Items.empty() && Top().dwTimeForExecute < dwTime; ++i)
     {
+        if (Device.dwPrecacheFrame == 0 &&
+        CPU::QPC() >= hardLimit11ms)
+    {
+        break;
+    }
+
         // Update
         Item item = Top();
 
@@ -400,11 +409,14 @@ void CSheduler::ProcessStep()
             Msg("* xrSheduler: too much time consumed by object [%s] (%dms)", itemName, execTime);
 #endif
 
-        if (i % 3 != 3 - 1)
-            continue;
-
-        if (Device.dwPrecacheFrame == 0 && CPU::QPC() > cycles_limit)
+        //if (i % 3 != 3 - 1)
+          //  continue;
+        const u64 now = CPU::QPC();
+       // if (Device.dwPrecacheFrame == 0 && CPU::QPC() > cycles_limit)
+        if (Device.dwPrecacheFrame == 0 &&
+    (now >= cycles_limit || now >= hardLimit11ms))
         {
+            if (now >= cycles_limit)
             // we have maxed out the load - increase heap
             psShedulerTarget += psShedulerReaction * 3;
             break;
@@ -422,9 +434,15 @@ void CSheduler::ProcessStep()
     psShedulerTarget -= psShedulerReaction;
 }
 
+//const u64 schedStart = CPU::QPC();
+
+//static double previousUpdateMs = 0.0;
+
 void CSheduler::Update()
 {
     ZoneScoped;
+
+    const u64 schedStart = CPU::QPC(); //check
 
     // Initialize
     stats.Update.Begin();
@@ -439,6 +457,9 @@ void CSheduler::Update()
     // Realtime priority
     m_processing_now = true;
     const u32 dwTime = Device.dwTimeGlobal;
+#if XRAY_ENABLE_STUTTER_TIMERS
+    const u64 rtStart = CPU::QPC();
+#endif
     for (auto& item : ItemsRT)
     {
         R_ASSERT(item.Object);
@@ -452,6 +473,10 @@ void CSheduler::Update()
 #endif
             item.dwTimeOfLastExecute = dwTime;
             continue;
+            stats.Update.End();
+
+           
+
         }
 
         const u32 Elapsed = dwTime - item.dwTimeOfLastExecute;
@@ -461,15 +486,29 @@ void CSheduler::Update()
 #endif
         item.Object->shedule_Update(Elapsed);
         item.dwTimeOfLastExecute = dwTime;
-    }
+     
+}
 
     // Normal (sheduled)
+
+#if XRAY_ENABLE_STUTTER_TIMERS
+    const u64 rtEnd = CPU::QPC();
+#endif
+
+#if XRAY_ENABLE_STUTTER_TIMERS
+const u64 normalStart = CPU::QPC();
+#endif
+
     ProcessStep();
+#if XRAY_ENABLE_STUTTER_TIMERS
+    const u64 normalEnd = CPU::QPC();
+#endif
+
     m_processing_now = false;
 #ifdef DEBUG_SCHEDULER
     Msg("SCHEDULER: PROCESS STEP FINISHED %d", Device.dwFrame);
 #endif
-    clamp(psShedulerTarget, 3.f, 66.f);
+    clamp(psShedulerTarget, 0.1f, 29.f); //my time
     psShedulerCurrent = 0.9f * psShedulerCurrent + 0.1f * psShedulerTarget;
     stats.Load = psShedulerCurrent;
 
@@ -477,4 +516,79 @@ void CSheduler::Update()
     isSheduleInProgress = false;
     internal_Registration();
     stats.Update.End();
+
+    const double currentUpdateMs =
+    double(CPU::QPC() - schedStart) * 1000.0 /
+    double(CPU::qpc_freq);
+
+
+// the current update also exceeded 29 ms.
+ // Maximum total scheduler time: 29 ms.
+    if (currentUpdateMs > 29.0)
+    
+{
+    psShedulerCurrent = 3.0f;
+    psShedulerTarget = 3.0f;
+
+#if XRAY_ENABLE_STUTTER_TIMERS
+    Msg("[SCHED_RESET] current=%.3f -> budget=3ms",
+         currentUpdateMs);
+#endif
+
+    }
+    
+
+
+#if XRAY_ENABLE_STUTTER_TIMERS
+ // Scheduler diagnostics: once every 5 seconds.
+   static u64 windowStart = 0;
+static u64 minTicks = u64(-1);
+static u64 maxTicks = 0;
+static u64 maxRTTicks = 0;
+static u64 maxNormalTicks = 0;
+static u32 calls = 0;
+
+const u64 now = CPU::QPC();
+
+const u64 elapsed = now - schedStart;
+const u64 rtElapsed = rtEnd - rtStart;
+const u64 normalElapsed = normalEnd - normalStart;
+
+if (!windowStart)
+    windowStart = schedStart;
+
+minTicks = std::min(minTicks, elapsed);
+maxTicks = std::max(maxTicks, elapsed);
+
+maxRTTicks = std::max(maxRTTicks, rtElapsed);
+maxNormalTicks = std::max(maxNormalTicks, normalElapsed);
+
+++calls;
+
+if (now - windowStart >= CPU::qpc_freq * 5)
+{
+    const double toMs = 1000.0 / double(CPU::qpc_freq);
+
+    Msg(
+        "[SCHED] calls=%u min=%.3f max=%.3f "
+        "RT_max=%.3f Normal_max=%.3f ms",
+        calls,
+        double(minTicks) * toMs,
+        double(maxTicks) * toMs,
+        double(maxRTTicks) * toMs,
+        double(maxNormalTicks) * toMs
+    );
+
+    windowStart = now;
+    minTicks = u64(-1);
+    maxTicks = 0;
+    maxRTTicks = 0;
+    maxNormalTicks = 0;
+    calls = 0;
+    }
+#endif
 }
+
+
+
+
